@@ -3511,32 +3511,79 @@ const handleLogin = async (req: Request, res: Response) => {
       }
 
       if (!exam || !targetExamId) {
-        return res.status(404).json({ error: 'Token ujian tidak ditemukan atau tidak valid. Silakan cek kembali token dari pengawas.' });
+        return res.status(404).json({
+          success: false,
+          error: 'Token ujian tidak ditemukan atau tidak valid. Silakan cek kembali token dari pengawas.',
+          message: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+        });
       }
 
       // Cek apakah status exam 'Aktif'
       if (exam.status !== 'Aktif') {
         return res.status(403).json({
+          success: false,
           error: `Paket ujian "${exam.mapel}" saat ini berstatus "${exam.status}". Ujian hanya dapat diikuti jika berstatus "Aktif".`,
+          message: `Paket ujian "${exam.mapel}" saat ini berstatus "${exam.status}". Ujian hanya dapat diikuti jika berstatus "Aktif".`,
           exam_status: exam.status,
         });
       }
 
       // Cek apakah Token valid
       if (!token) {
-        return res.status(400).json({ error: 'Token ujian wajib dimasukkan' });
+        return res.status(400).json({ success: false, error: 'Token ujian wajib dimasukkan', message: 'Token ujian wajib dimasukkan' });
       }
 
       if (exam.token.trim().toUpperCase() !== token.trim().toUpperCase()) {
         return res.status(401).json({
+          success: false,
           error: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+          message: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
         });
+      }
+
+      // Cek apakah siswa sudah menyelesaikan ujian ini (1 siswa 1 kali ujian)
+      try {
+        const pool = getPool();
+        const sessionCheckRes = await pool.query(
+          `SELECT status_pengerjaan FROM exam_sessions WHERE user_id = $1 AND exam_id = $2 ORDER BY id DESC`,
+          [targetUserId, targetExamId]
+        );
+
+        if (sessionCheckRes.rows.length > 0) {
+          const finishedSession = sessionCheckRes.rows.find(
+            (row: any) => row.status_pengerjaan === 'Selesai' || row.status_pengerjaan === 'Force Submit'
+          );
+
+          if (finishedSession) {
+            return res.status(403).json({
+              success: false,
+              error: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
+              message: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
+            });
+          }
+        }
+      } catch (dbCheckErr) {
+        console.warn('Fallback check for completed exam session:', dbCheckErr);
+        const memSessions = memStore.sessions.filter(
+          (s) => s.user_id === targetUserId && s.exam_id === targetExamId
+        );
+        const finishedMem = memSessions.find(
+          (s) => s.status_pengerjaan === 'Selesai' || s.status_pengerjaan === 'Force Submit'
+        );
+        if (finishedMem) {
+          return res.status(403).json({
+            success: false,
+            error: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
+            message: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
+          });
+        }
       }
 
       // Jika ya, buat/dapatkan baris baru di tabel Exam_Sessions
       const session = await startOrGetExamSession(targetExamId, targetUserId, !!req.body.force_new);
 
       res.status(200).json({
+        success: true,
         message: 'Sesi ujian berhasil dimulai / dimuat',
         session,
         exam: {
@@ -3555,12 +3602,14 @@ const handleLogin = async (req: Request, res: Response) => {
       });
     } catch (error: any) {
       console.error('Error start-exam:', error);
-      res.status(500).json({ error: error.message || 'Gagal memulai sesi ujian' });
+      res.status(500).json({ success: false, error: error.message || 'Gagal memulai sesi ujian', message: error.message || 'Gagal memulai sesi ujian' });
     }
   };
 
   app.post('/start-exam', handleStartExam);
   app.post('/api/start-exam', handleStartExam);
+  app.post('/verify-token', handleStartExam);
+  app.post('/api/verify-token', handleStartExam);
   app.post('/api/sessions/start', handleStartExam);
 
   // POST /auto-save & POST /api/answers/auto-save: API untuk menyimpan jawaban siswa ke tabel Student_Answers setiap kali mereka klik opsi A/B/C/D atau mengetik essay

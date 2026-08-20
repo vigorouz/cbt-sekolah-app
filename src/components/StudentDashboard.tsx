@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Play,
   CheckCircle2,
+  AlertCircle,
   AlertTriangle,
   Award,
   ShieldCheck,
@@ -62,12 +63,30 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [examToken, setExamToken] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [isValidatingToken, setIsValidatingToken] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(completedNotification?.message || null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(
+    completedNotification?.message ? { message: completedNotification.message, type: 'success' } : null
+  );
   const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
   const [realHistory, setRealHistory] = useState<ExamHistoryItem[]>([]);
+  const [exams, setExams] = useState<CBTExam[]>([]);
 
   const studentName = currentUser?.name || 'Budi Santoso';
   const studentNis = currentUser?.username || '10001';
+
+  // Load daftar ujian aktif untuk Card Info Siswa
+  useEffect(() => {
+    apiFetch('/api/exams')
+      .then((res) => parseJsonResponse(res, []))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const activeExams = data.filter(
+            (e: CBTExam) => e.status === 'Aktif' || !e.status || e.status.toLowerCase() === 'aktif'
+          );
+          setExams(activeExams.length > 0 ? activeExams : data);
+        }
+      })
+      .catch((e) => console.warn('Could not load exams for student dashboard:', e));
+  }, []);
 
   // Load real sessions dari server untuk murid ini
   useEffect(() => {
@@ -121,15 +140,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   useEffect(() => {
     if (completedNotification?.message) {
       setActiveTab('hasil');
-      setToastMessage(completedNotification.message);
+      setToast({ message: completedNotification.message, type: 'success' });
     }
   }, [completedNotification]);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
     setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
+      setToast(null);
+    }, 4000);
   };
 
   const handleStartExamSubmit = async (e: React.FormEvent) => {
@@ -137,12 +156,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     const cleanToken = examToken.trim().toUpperCase();
 
     if (!cleanToken) {
-      setTokenError('Silakan masukkan token ujian terlebih dahulu.');
+      const msg = 'Silakan masukkan token ujian terlebih dahulu.';
+      setTokenError(msg);
+      showToast(msg, 'error');
       return;
     }
 
     if (cleanToken.length < 3) {
-      setTokenError('Format token tidak valid. Silakan periksa kembali token dari pengawas.');
+      const msg = 'Format token tidak valid. Silakan periksa kembali token dari pengawas.';
+      setTokenError(msg);
+      showToast(msg, 'error');
       return;
     }
 
@@ -161,7 +184,28 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         }),
       });
 
-      const data = await parseJsonResponse(res);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || (data && data.success === false)) {
+        let errorMsg = data?.message || data?.error;
+        if (!errorMsg) {
+          if (res.status === 403) {
+            errorMsg = 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.';
+          } else if (res.status === 401 || res.status === 404) {
+            errorMsg = 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.';
+          } else {
+            errorMsg = 'Gagal memulai ujian. Silakan periksa koneksi dan coba kembali.';
+          }
+        }
+        setTokenError(errorMsg);
+        showToast(errorMsg, 'error');
+        return;
+      }
 
       // 2. Request Fullscreen Mode jika browser mendukung untuk pengalaman ujian terstandar
       try {
@@ -178,7 +222,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       }
     } catch (err: any) {
       console.error('Error starting exam:', err);
-      setTokenError(err.message || 'Gagal memulai ujian. Silakan coba kembali.');
+      const cleanMsg =
+        typeof err.message === 'string'
+          ? err.message.replace(/^HTTP Error \d+:\s*/i, '').replace(/^Error:\s*/i, '')
+          : 'Gagal memulai ujian. Silakan coba kembali.';
+      setTokenError(cleanMsg);
+      showToast(cleanMsg, 'error');
     } finally {
       setIsValidatingToken(false);
     }
@@ -391,9 +440,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   Jadwal Hari Ini
                 </p>
-                <p className="text-base font-bold text-slate-900">UAS Matematika Diskrit</p>
+                <p className="text-base font-bold text-slate-900 truncate">
+                  {exams.length > 0 ? (exams[0]?.mapel || 'Ujian Terjadwal') : 'Tidak ada ujian aktif'}
+                </p>
                 <p className="text-xs font-semibold text-[#00236f] flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> 08:00 - 10:00 WIB (90 Menit)
+                  <Clock className="w-3.5 h-3.5" />{' '}
+                  {exams.length > 0 && exams[0]?.durasi ? `${exams[0].durasi} Menit` : 'Durasi menyesuaikan'}
                 </p>
               </div>
 
@@ -405,8 +457,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   Status Agenda
                 </p>
-                <p className="text-base font-bold text-slate-900">3 Mata Pelajaran</p>
-                <p className="text-xs text-slate-500 font-medium">Tersisa pada pekan ini</p>
+                <p className="text-base font-bold text-slate-900">
+                  {exams.length} Mata Pelajaran Tersedia
+                </p>
+                <p className="text-xs text-slate-500 font-medium">Tersedia pada portal saat ini</p>
               </div>
 
               {/* Integritas Anti-Cheat */}
@@ -686,7 +740,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab: Logout */}
         <button
-          onClick={onLogout || (() => showToast('Anda telah keluar.'))}
+          onClick={onLogout || (() => showToast('Anda telah keluar.', 'success'))}
           className="flex flex-col items-center justify-center py-1 px-4 text-rose-600 rounded-xl"
         >
           <LogOut className="w-5 h-5" />
@@ -695,10 +749,20 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       </nav>
 
       {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-20 md:bottom-6 right-5 z-50 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-slate-700 animate-in fade-in slide-in-from-bottom-2 duration-150">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span>{toastMessage}</span>
+      {toast && (
+        <div
+          className={`fixed bottom-20 md:bottom-6 right-5 z-50 text-xs px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 border animate-in fade-in slide-in-from-bottom-2 duration-150 ${
+            toast.type === 'error'
+              ? 'bg-rose-950 text-rose-100 border-rose-800 shadow-rose-950/40'
+              : 'bg-slate-900 text-white border-slate-700 shadow-slate-950/40'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          )}
+          <span className="font-medium">{toast.message}</span>
         </div>
       )}
     </div>

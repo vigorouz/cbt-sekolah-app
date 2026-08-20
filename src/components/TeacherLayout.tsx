@@ -926,6 +926,39 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                 );
               })}
             </div>
+
+            {/* Profil & Tombol Logout Mobile Menu */}
+            <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+              <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                <div className="w-8 h-8 rounded-full bg-[#00236f] text-white flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  {teacherName
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .substring(0, 2)
+                    .toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-slate-800 truncate">{teacherName}</div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {isAdmin ? 'Administrator CBT' : 'Guru Pengawas CBT'}
+                  </div>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  onClick={() => {
+                    setIsMobileDrawerOpen(false);
+                    onLogout();
+                  }}
+                  className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl font-bold text-xs text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 text-red-600" />
+                  <span>Keluar (Logout)</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
