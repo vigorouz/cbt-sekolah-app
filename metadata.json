@@ -1,0 +1,6 @@
+{
+  "name": "Academic Excellence Portal",
+  "description": "Academic Excellence Portal - Sistem Ujian Berbasis Komputer (CBT) Terstandarisasi dengan PostgreSQL dan Drizzle ORM.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
