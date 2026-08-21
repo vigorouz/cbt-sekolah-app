@@ -295,10 +295,18 @@ export async function deleteExam(id: number) {
 // Questions Helpers
 export async function getAllQuestions(examId?: number) {
   try {
+    const pool = (await import('./index')).getPool();
     if (examId) {
-      return await db.select().from(questions).where(eq(questions.exam_id, examId)).orderBy(questions.id);
+      const result = await pool.query(
+        `SELECT q.*, e.kode_paket FROM questions q LEFT JOIN exams e ON q.exam_id = e.id WHERE q.exam_id = $1 ORDER BY q.id DESC`,
+        [examId]
+      );
+      return result.rows;
     }
-    return await db.select().from(questions).orderBy(questions.id);
+    const result = await pool.query(
+      `SELECT q.*, e.kode_paket FROM questions q LEFT JOIN exams e ON q.exam_id = e.id ORDER BY q.id DESC`
+    );
+    return result.rows;
   } catch (error) {
     handleSqlError('getAllQuestions', error);
     return memStore.getAllQuestions(examId);

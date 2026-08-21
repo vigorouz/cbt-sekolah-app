@@ -748,10 +748,14 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
         selectedExamFilter === 'Semua Paket' || q.exam_id === Number(selectedExamFilter);
       const matchMedia =
         questionMediaTypeFilter === 'Semua Media' || q.tipe_media === questionMediaTypeFilter;
+      const qText = (q.pertanyaan || '').toLowerCase();
+      const qOpsiA = (q.opsi_a || '').toLowerCase();
+      const qOpsiB = (q.opsi_b || '').toLowerCase();
+      const qSearch = questionSearchQuery.toLowerCase();
       const matchSearch =
-        q.pertanyaan.toLowerCase().includes(questionSearchQuery.toLowerCase()) ||
-        q.opsi_a.toLowerCase().includes(questionSearchQuery.toLowerCase()) ||
-        q.opsi_b.toLowerCase().includes(questionSearchQuery.toLowerCase());
+        qText.includes(qSearch) ||
+        qOpsiA.includes(qSearch) ||
+        qOpsiB.includes(qSearch);
       return matchExam && matchMedia && matchSearch;
     });
   }, [questions, selectedExamFilter, questionMediaTypeFilter, questionSearchQuery]);
@@ -1392,7 +1396,11 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                               <td className="py-4 px-5">
                                 <div className="font-bold text-[#00236f]">Soal #{q.id}</div>
                                 <div className="text-[11px] text-slate-500 truncate max-w-[150px]">
-                                  {examMatch ? `[${examMatch.kode_paket}] ${examMatch.mapel}` : `Paket #${q.exam_id}`}
+                                  {examMatch
+                                    ? `[${examMatch.kode_paket}] ${examMatch.mapel}`
+                                    : (q as any).kode_paket
+                                    ? `[${(q as any).kode_paket}] Paket #${q.exam_id}`
+                                    : `Paket #${q.exam_id}`}
                                 </div>
                               </td>
 

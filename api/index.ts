@@ -1767,10 +1767,18 @@ export async function deleteExam(id: number) {
 // Questions Helpers
 export async function getAllQuestions(examId?: number) {
   try {
+    const pool = getPool();
     if (examId) {
-      return await db.select().from(questions).where(eq(questions.exam_id, examId)).orderBy(questions.id);
+      const result = await pool.query(
+        `SELECT q.*, e.kode_paket FROM questions q LEFT JOIN exams e ON q.exam_id = e.id WHERE q.exam_id = $1 ORDER BY q.id DESC`,
+        [examId]
+      );
+      return result.rows;
     }
-    return await db.select().from(questions).orderBy(questions.id);
+    const result = await pool.query(
+      `SELECT q.*, e.kode_paket FROM questions q LEFT JOIN exams e ON q.exam_id = e.id ORDER BY q.id DESC`
+    );
+    return result.rows;
   } catch (error) {
     handleSqlError('getAllQuestions', error);
     return memStore.getAllQuestions(examId);
@@ -3312,10 +3320,27 @@ const handleLogin = async (req: Request, res: Response) => {
   app.get('/api/questions', async (req: Request, res: Response) => {
     try {
       const examId = req.query.exam_id ? parseInt(req.query.exam_id as string, 10) : undefined;
-      const list = await getAllQuestions(examId);
-      res.json(list);
+      const pool = getPool();
+      if (examId) {
+        const result = await pool.query(
+          `SELECT q.*, e.kode_paket FROM questions q LEFT JOIN exams e ON q.exam_id = e.id WHERE q.exam_id = $1 ORDER BY q.id DESC`,
+          [examId]
+        );
+        return res.json(result.rows);
+      }
+      const result = await pool.query(
+        `SELECT q.*, e.kode_paket FROM questions q LEFT JOIN exams e ON q.exam_id = e.id ORDER BY q.id DESC`
+      );
+      res.json(result.rows);
     } catch (error: any) {
-      res.status(500).json({ error: error.message || 'Gagal mengambil daftar bank soal' });
+      console.error('Error fetching questions from database:', error);
+      try {
+        const examId = req.query.exam_id ? parseInt(req.query.exam_id as string, 10) : undefined;
+        const list = await getAllQuestions(examId);
+        return res.json(list);
+      } catch (fallbackErr: any) {
+        res.status(500).json({ error: error.message || 'Gagal mengambil daftar bank soal' });
+      }
     }
   });
 
