@@ -1787,6 +1787,14 @@ export async function getAllQuestions(examId?: number) {
 
 export async function getQuestionsByExamId(examId: number) {
   try {
+    const pool = getPool();
+    const result = await pool.query(
+      `SELECT id, exam_id, guru_id, tipe_media, link_media, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, opsi_e, kunci, bobot_poin FROM questions WHERE exam_id = $1 ORDER BY id ASC`,
+      [examId]
+    );
+    if (result.rows && result.rows.length > 0) {
+      return result.rows;
+    }
     return await db.select().from(questions).where(eq(questions.exam_id, examId)).orderBy(questions.id);
   } catch (error) {
     handleSqlError('getQuestionsByExamId', error);
@@ -3323,12 +3331,23 @@ const handleLogin = async (req: Request, res: Response) => {
         }
       }
 
-      const rawQuestions = await getQuestionsByExamId(activeExam.id);
-      // Sanitasi: Siswa saat ujian tidak boleh melihat kunci jawaban
-      const studentQuestions = rawQuestions.map((item: any) => {
-        const { kunci, ...q } = item;
-        return q;
-      });
+      let studentQuestions: any[] = [];
+      try {
+        const pool = getPool();
+        const qRes = await pool.query(
+          `SELECT id, exam_id, tipe_media, link_media, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, opsi_e, bobot_poin FROM questions WHERE exam_id = $1 ORDER BY id ASC`,
+          [activeExam.id]
+        );
+        studentQuestions = qRes.rows || [];
+      } catch (qErr) {
+        console.warn('DB query questions error in /api/exams/active, fallback:', qErr);
+        const rawQuestions = await getQuestionsByExamId(activeExam.id);
+        // Sanitasi: Siswa saat ujian tidak boleh melihat kunci jawaban
+        studentQuestions = rawQuestions.map((item: any) => {
+          const { kunci, ...q } = item;
+          return q;
+        });
+      }
 
       res.json({
         exam: activeExam,
@@ -3548,20 +3567,42 @@ const handleLogin = async (req: Request, res: Response) => {
   app.get('/api/exams/:examId/questions', async (req: Request, res: Response) => {
     try {
       const examId = parseInt(req.params.examId, 10);
-      const isStudentView = req.query.studentView === 'true';
-      const list = await getQuestionsByExamId(examId);
-
-      if (isStudentView) {
-        // Jangan kirim kunci jawaban ke siswa saat mengerjakan
-        const studentQuestions = list.map((item: any) => {
-          const { kunci, ...q } = item;
-          return q;
-        });
-        return res.json(studentQuestions);
+      if (isNaN(examId)) {
+        return res.status(400).json({ error: 'examId tidak valid' });
       }
+      const isStudentView = req.query.studentView === 'true' || req.query.role === 'siswa' || req.query.isStudent === 'true';
 
-      res.json(list);
+      const pool = getPool();
+      try {
+        if (isStudentView) {
+          // Query mutlak yang harus dipakai (Anti-Cheat: JANGAN kirim kolom kunci ke respons JSON frontend siswa)
+          const result = await pool.query(
+            `SELECT id, exam_id, tipe_media, link_media, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, opsi_e, bobot_poin FROM questions WHERE exam_id = $1 ORDER BY id ASC`,
+            [examId]
+          );
+          return res.json(result.rows || []);
+        }
+
+        const result = await pool.query(
+          `SELECT id, exam_id, guru_id, tipe_media, link_media, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, opsi_e, kunci, bobot_poin FROM questions WHERE exam_id = $1 ORDER BY id ASC`,
+          [examId]
+        );
+        return res.json(result.rows || []);
+      } catch (sqlErr) {
+        console.warn('DB error in /api/exams/:examId/questions, fallback:', sqlErr);
+        const list = await getQuestionsByExamId(examId);
+        if (isStudentView) {
+          // Jangan kirim kunci jawaban ke siswa saat mengerjakan
+          const studentQuestions = list.map((item: any) => {
+            const { kunci, ...q } = item;
+            return q;
+          });
+          return res.json(studentQuestions);
+        }
+        return res.json(list);
+      }
     } catch (error: any) {
+      console.error('Error fetching questions by exam ID:', error);
       res.status(500).json({ error: error.message || 'Gagal mengambil butir soal' });
     }
   });

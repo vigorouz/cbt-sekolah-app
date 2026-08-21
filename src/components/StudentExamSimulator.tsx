@@ -149,33 +149,55 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
         return;
       }
 
-      // Load Soal dari tabel Questions (GET /api/exams/active atau /api/exams/:id/questions)
+      // Load Soal dari tabel Questions (GET /api/exams/:id/questions?studentView=true atau /api/exams/active)
       const examId = currentSess.exam_id;
-      let loadedQuestions: CBTQuestion[] = [];
+      let loadedQuestions: any[] = [];
 
       try {
-        const activeRes = await apiFetch(`/api/exams/active?exam_id=${examId}&token=${encodeURIComponent(initialToken.trim())}`);
-        if (activeRes.ok) {
-          const activeData = await activeRes.json();
-          if (activeData.questions && Array.isArray(activeData.questions)) {
-            loadedQuestions = activeData.questions;
-            if (activeData.exam && !currentEx) {
-              setActiveExam(activeData.exam);
-              currentEx = activeData.exam;
-            }
+        const directRes = await apiFetch(`/api/exams/${examId}/questions?studentView=true`);
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          if (Array.isArray(directData) && directData.length > 0) {
+            loadedQuestions = directData;
           }
         }
       } catch (e) {
-        console.warn('Fallback ke endpoint exam questions by ID:', e);
+        console.warn('Gagal fetch /api/exams/:examId/questions:', e);
       }
 
       if (loadedQuestions.length === 0) {
-        const fallbackRes = await apiFetch(`/api/exams/${examId}/questions?studentView=true`);
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          if (Array.isArray(fallbackData)) {
-            loadedQuestions = fallbackData;
+        try {
+          const activeRes = await apiFetch(`/api/exams/active?exam_id=${examId}&token=${encodeURIComponent(initialToken.trim())}`);
+          if (activeRes.ok) {
+            const activeData = await activeRes.json();
+            if (activeData.questions && Array.isArray(activeData.questions) && activeData.questions.length > 0) {
+              loadedQuestions = activeData.questions;
+              if (activeData.exam && !currentEx) {
+                setActiveExam(activeData.exam);
+                currentEx = activeData.exam;
+              }
+            }
           }
+        } catch (e) {
+          console.warn('Gagal fetch /api/exams/active:', e);
+        }
+      }
+
+      if (loadedQuestions.length === 0) {
+        try {
+          const allQuestionsRes = await apiFetch(`/api/questions?exam_id=${examId}`);
+          if (allQuestionsRes.ok) {
+            const allQData = await allQuestionsRes.json();
+            if (Array.isArray(allQData) && allQData.length > 0) {
+              // Sanitasi anti-cheat jika dari endpoint umum
+              loadedQuestions = allQData.map((q: any) => {
+                const { kunci, ...safeQ } = q;
+                return safeQ;
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Gagal fallback ke /api/questions:', e);
         }
       }
 
@@ -183,8 +205,26 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
         throw new Error('Belum ada butir soal yang diinput oleh guru untuk paket ujian ini.');
       }
 
+      // Normalisasi field data soal dari database (menggunakan pertanyaan)
+      const normalizedQuestions: CBTQuestion[] = loadedQuestions.map((q: any) => ({
+        id: Number(q.id),
+        exam_id: Number(q.exam_id || examId),
+        guru_id: q.guru_id ? Number(q.guru_id) : null,
+        tipe_media: q.tipe_media || 'Teks',
+        link_media: q.link_media || null,
+        pertanyaan: q.pertanyaan || q.teks_soal || '',
+        opsi_a: q.opsi_a || null,
+        opsi_b: q.opsi_b || null,
+        opsi_c: q.opsi_c || null,
+        opsi_d: q.opsi_d || null,
+        opsi_e: q.opsi_e || null,
+        kunci: q.kunci || null,
+        bobot_poin: q.bobot_poin != null ? Number(q.bobot_poin) : 10,
+        question_type: (!q.opsi_a && !q.opsi_b && !q.opsi_c) ? 'essay' : (q.question_type || 'pilihan_ganda'),
+      }));
+
       // Anti-Cheat: Terapkan algoritma Fisher-Yates Shuffle pada urutan soal
-      const randomizedQuestions = fisherYatesShuffle(loadedQuestions);
+      const randomizedQuestions = fisherYatesShuffle(normalizedQuestions);
       setQuestions(randomizedQuestions);
 
       // Anti-Cheat: Terapkan algoritma Fisher-Yates Shuffle pada opsi jawaban untuk soal pilihan ganda

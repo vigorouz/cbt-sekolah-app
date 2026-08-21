@@ -315,6 +315,14 @@ export async function getAllQuestions(examId?: number) {
 
 export async function getQuestionsByExamId(examId: number) {
   try {
+    const pool = (await import('./index')).getPool();
+    const result = await pool.query(
+      `SELECT id, exam_id, guru_id, tipe_media, link_media, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, opsi_e, kunci, bobot_poin FROM questions WHERE exam_id = $1 ORDER BY id ASC`,
+      [examId]
+    );
+    if (result.rows && result.rows.length > 0) {
+      return result.rows;
+    }
     return await db.select().from(questions).where(eq(questions.exam_id, examId)).orderBy(questions.id);
   } catch (error) {
     handleSqlError('getQuestionsByExamId', error);
