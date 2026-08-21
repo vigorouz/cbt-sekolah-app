@@ -799,17 +799,6 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
             <span>Anti-Cheat: {violationsCount}/3</span>
           </div>
 
-          {/* Test Violation Button (Opsional untuk pengujian pengawas) */}
-          <button
-            type="button"
-            onClick={() => handleRecordViolation('Simulasi pelanggaran tombol uji (+1)')}
-            title="Uji sistem anti-cheat untuk memicu peringatan dan batas 3x Force Submit"
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-            <span>Uji Pelanggaran (+1)</span>
-          </button>
-
           {/* Timer Display */}
           <div className="flex items-center gap-1.5 bg-rose-50 text-rose-800 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold font-mono shadow-xs">
             <Clock className="w-3.5 h-3.5 text-rose-600" />
