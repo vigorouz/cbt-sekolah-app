@@ -222,7 +222,7 @@ export const TeacherEssayGrading: React.FC<TeacherEssayGradingProps> = ({
             <h2>Koreksi Lembar Jawaban Essay</h2>
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Berikan penilaian manual pada jawaban bertipe <strong>Essay</strong> siswa. Sistem Cloud SQL akan otomatis menjumlahkan <strong>Nilai PG + Nilai Essay</strong> ke kolom <code>total_nilai</code> pada tabel <code>Exam_Sessions</code>.
+            Evaluasi dan berikan penilaian manual untuk lembar jawaban esai siswa. Sistem akan secara otomatis mengakumulasikan skor ini dengan <strong>Nilai Pilihan Ganda</strong> untuk menghasilkan <strong>total nilai akhir</strong> siswa.
           </p>
         </div>
 

@@ -178,7 +178,7 @@ export const TeacherExamResults: React.FC<TeacherExamResultsProps> = ({
             <h2>Tabel Rekapitulasi Hasil Ujian</h2>
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Rekap lengkap nilai siswa mencakup <strong>Nilai PG (Otomatis)</strong>, <strong>Nilai Essay (Koreksi Guru)</strong>, dan <strong>Total Nilai Akhir</strong> yang terintegrasi secara langsung dengan tabel <code>Exam_Sessions</code>.
+            Ringkasan komprehensif pencapaian akademik siswa. Menyajikan rincian <strong>Nilai Pilihan Ganda</strong> (otomatis), <strong>Nilai Esai</strong> (manual), serta <strong>Total Nilai Akhir</strong> yang terakumulasi secara langsung (real-time) oleh sistem.
           </p>
         </div>
 
