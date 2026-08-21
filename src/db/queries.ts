@@ -341,22 +341,54 @@ export async function createQuestion(data: {
   const isEssay = qType === 'essay';
 
   try {
-    const result = await db.insert(questions).values({
-      exam_id: data.exam_id,
-      guru_id: data.guru_id || null,
-      question_type: qType,
-      tipe_media: data.tipe_media,
-      link_media: data.link_media || null,
-      pertanyaan: data.pertanyaan,
-      opsi_a: isEssay ? null : (data.opsi_a || null),
-      opsi_b: isEssay ? null : (data.opsi_b || null),
-      opsi_c: isEssay ? null : (data.opsi_c || null),
-      opsi_d: isEssay ? null : (data.opsi_d || null),
-      opsi_e: isEssay ? null : (data.opsi_e || null),
-      kunci: isEssay ? 'essay' : (data.kunci ? data.kunci.toUpperCase() : 'A'),
-      bobot_poin: data.bobot_poin ?? 20,
-    }).returning();
-    return result[0];
+    const pool = (await import('./index')).getPool();
+    const safeOpsiA = isEssay ? null : (data.opsi_a || null);
+    const safeOpsiB = isEssay ? null : (data.opsi_b || null);
+    const safeOpsiC = isEssay ? null : (data.opsi_c || null);
+    const safeOpsiD = isEssay ? null : (data.opsi_d || null);
+    const safeOpsiE = isEssay ? null : (data.opsi_e || null);
+    const safeKunci = isEssay ? 'essay' : (data.kunci ? data.kunci.toUpperCase() : 'A');
+
+    const insertSql = `
+      INSERT INTO questions (exam_id, guru_id, tipe_media, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, opsi_e, kunci, bobot_poin)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `;
+
+    try {
+      const result = await pool.query(insertSql, [
+        data.exam_id,
+        data.guru_id || null,
+        data.tipe_media || 'Teks',
+        data.pertanyaan,
+        safeOpsiA,
+        safeOpsiB,
+        safeOpsiC,
+        safeOpsiD,
+        safeOpsiE,
+        safeKunci,
+        data.bobot_poin ?? 20,
+      ]);
+      return result.rows[0];
+    } catch (queryErr: any) {
+      if (queryErr?.message?.includes('not-null') || queryErr?.message?.includes('opsi_a')) {
+        const retryResult = await pool.query(insertSql, [
+          data.exam_id,
+          data.guru_id || null,
+          data.tipe_media || 'Teks',
+          data.pertanyaan,
+          safeOpsiA ?? '',
+          safeOpsiB ?? '',
+          safeOpsiC ?? '',
+          safeOpsiD ?? '',
+          safeOpsiE ?? '',
+          safeKunci ?? 'essay',
+          data.bobot_poin ?? 20,
+        ]);
+        return retryResult.rows[0];
+      }
+      throw queryErr;
+    }
   } catch (error) {
     handleSqlError('createQuestion', error);
     return memStore.createQuestion(data);
@@ -380,18 +412,68 @@ export async function updateQuestion(
   }>
 ) {
   try {
-    if (data.question_type === 'essay') {
-      data.opsi_a = null;
-      data.opsi_b = null;
-      data.opsi_c = null;
-      data.opsi_d = null;
-      data.opsi_e = null;
-      data.kunci = 'essay';
-    } else if (data.kunci) {
-      data.kunci = data.kunci.toUpperCase();
+    const isEssay = data.question_type === 'essay' || data.kunci === 'essay';
+    const pool = (await import('./index')).getPool();
+    try {
+      const result = await pool.query(
+        `UPDATE questions
+         SET tipe_media = COALESCE($1, tipe_media),
+             pertanyaan = COALESCE($2, pertanyaan),
+             opsi_a = $3,
+             opsi_b = $4,
+             opsi_c = $5,
+             opsi_d = $6,
+             opsi_e = $7,
+             kunci = $8,
+             bobot_poin = COALESCE($9, bobot_poin)
+         WHERE id = $10
+         RETURNING *`,
+        [
+          data.tipe_media || null,
+          data.pertanyaan || null,
+          isEssay ? null : (data.opsi_a !== undefined ? data.opsi_a : null),
+          isEssay ? null : (data.opsi_b !== undefined ? data.opsi_b : null),
+          isEssay ? null : (data.opsi_c !== undefined ? data.opsi_c : null),
+          isEssay ? null : (data.opsi_d !== undefined ? data.opsi_d : null),
+          isEssay ? null : (data.opsi_e !== undefined ? data.opsi_e : null),
+          isEssay ? 'essay' : (data.kunci ? data.kunci.toUpperCase() : null),
+          data.bobot_poin !== undefined ? data.bobot_poin : null,
+          id,
+        ]
+      );
+      return result.rows[0];
+    } catch (queryErr: any) {
+      if (queryErr?.message?.includes('not-null') || queryErr?.message?.includes('opsi_a')) {
+        const retryResult = await pool.query(
+          `UPDATE questions
+           SET tipe_media = COALESCE($1, tipe_media),
+               pertanyaan = COALESCE($2, pertanyaan),
+               opsi_a = $3,
+               opsi_b = $4,
+               opsi_c = $5,
+               opsi_d = $6,
+               opsi_e = $7,
+               kunci = $8,
+               bobot_poin = COALESCE($9, bobot_poin)
+           WHERE id = $10
+           RETURNING *`,
+          [
+            data.tipe_media || null,
+            data.pertanyaan || null,
+            data.opsi_a ?? '',
+            data.opsi_b ?? '',
+            data.opsi_c ?? '',
+            data.opsi_d ?? '',
+            data.opsi_e ?? '',
+            data.kunci ?? 'essay',
+            data.bobot_poin !== undefined ? data.bobot_poin : null,
+            id,
+          ]
+        );
+        return retryResult.rows[0];
+      }
+      throw queryErr;
     }
-    const result = await db.update(questions).set(data).where(eq(questions.id, id)).returning();
-    return result[0];
   } catch (error) {
     handleSqlError('updateQuestion', error);
     return memStore.updateQuestion(id, data);
@@ -400,8 +482,9 @@ export async function updateQuestion(
 
 export async function deleteQuestion(id: number) {
   try {
-    const result = await db.delete(questions).where(eq(questions.id, id)).returning();
-    return result[0];
+    const pool = (await import('./index')).getPool();
+    const result = await pool.query(`DELETE FROM questions WHERE id = $1 RETURNING *`, [id]);
+    return result.rows[0];
   } catch (error) {
     handleSqlError('deleteQuestion', error);
     return memStore.deleteQuestion(id);

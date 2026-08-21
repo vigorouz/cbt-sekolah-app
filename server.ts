@@ -10,6 +10,16 @@ const PORT = 3000;
 if (!process.env.VERCEL) {
   async function startStandaloneServer() {
     try {
+      const { getPool } = await import('./src/db/index');
+      const pool = getPool();
+      await pool.query(`
+        ALTER TABLE questions ALTER COLUMN opsi_a DROP NOT NULL;
+        ALTER TABLE questions ALTER COLUMN opsi_b DROP NOT NULL;
+        ALTER TABLE questions ALTER COLUMN opsi_c DROP NOT NULL;
+        ALTER TABLE questions ALTER COLUMN opsi_d DROP NOT NULL;
+        ALTER TABLE questions ALTER COLUMN opsi_e DROP NOT NULL;
+        ALTER TABLE questions ALTER COLUMN kunci DROP NOT NULL;
+      `).catch(() => {});
       await seedDemoData();
       console.log('Database initialized / checked.');
     } catch (err) {

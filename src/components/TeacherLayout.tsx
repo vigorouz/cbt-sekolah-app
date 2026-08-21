@@ -393,14 +393,12 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
         body: JSON.stringify({
           exam_id: Number(questionExamId),
           guru_id: currentUser?.id || 1,
-          question_type: questionType,
           tipe_media: questionMediaType,
-          link_media: questionMediaLink.trim() || null,
           pertanyaan: questionText.trim(),
           opsi_a: isEssay ? null : optionA.trim(),
           opsi_b: isEssay ? null : optionB.trim(),
-          opsi_c: isEssay ? null : optionC.trim(),
-          opsi_d: isEssay ? null : optionD.trim(),
+          opsi_c: isEssay ? null : (optionC.trim() || null),
+          opsi_d: isEssay ? null : (optionD.trim() || null),
           opsi_e: isEssay ? null : (optionE.trim() || null),
           kunci: isEssay ? 'essay' : answerKey,
           bobot_poin: Number(questionScore) || 20,
@@ -409,14 +407,15 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Gagal menambah butir soal');
+        throw new Error(data.error || 'Gagal menambah butir soal ke database');
       }
 
-      showToast('Butir soal baru berhasil disimpan ke Cloud SQL!');
+      showToast('Butir soal baru berhasil disimpan ke database!');
       setIsAddQuestionOpen(false);
       resetQuestionForm();
-      fetchExamsAndQuestions();
+      await fetchExamsAndQuestions();
     } catch (err: any) {
+      console.error('Error saving question:', err);
       showToast(err.message || 'Gagal menyimpan soal');
     }
   };
@@ -459,9 +458,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           exam_id: Number(questionExamId),
-          question_type: questionType,
           tipe_media: questionMediaType,
-          link_media: questionMediaLink.trim() || null,
           pertanyaan: questionText.trim(),
           opsi_a: isEssay ? null : optionA.trim(),
           opsi_b: isEssay ? null : optionB.trim(),
@@ -478,10 +475,10 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
         throw new Error(data.error || 'Gagal memperbarui soal');
       }
 
-      showToast('Butir soal berhasil diperbarui di Cloud SQL!');
+      showToast('Butir soal berhasil diperbarui di database!');
       setEditingQuestion(null);
       resetQuestionForm();
-      fetchExamsAndQuestions();
+      await fetchExamsAndQuestions();
     } catch (err: any) {
       showToast(err.message || 'Gagal memperbarui soal');
     }
@@ -495,8 +492,8 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
           method: 'DELETE',
         });
         if (!res.ok) throw new Error('Gagal menghapus butir soal');
-        showToast('Butir soal berhasil dihapus dari Cloud SQL.');
-        fetchExamsAndQuestions();
+        showToast('Butir soal berhasil dihapus dari database.');
+        await fetchExamsAndQuestions();
       } catch (err: any) {
         showToast(err.message || 'Gagal menghapus butir soal');
       }
