@@ -3298,6 +3298,31 @@ const handleLogin = async (req: Request, res: Response) => {
         return res.status(404).json({ error: 'Tidak ada paket ujian aktif di database' });
       }
 
+      const now = new Date();
+      if (activeExam.waktu_mulai) {
+        const startTime = new Date(activeExam.waktu_mulai);
+        if (!isNaN(startTime.getTime()) && now.getTime() < startTime.getTime()) {
+          return res.status(403).json({
+            success: false,
+            error: 'Jadwal ujian ini belum dimulai. Silakan cek kembali jadwal Anda.',
+            message: 'Jadwal ujian ini belum dimulai. Silakan cek kembali jadwal Anda.',
+            waktu_mulai: activeExam.waktu_mulai,
+          });
+        }
+      }
+
+      if (activeExam.waktu_selesai) {
+        const endTime = new Date(activeExam.waktu_selesai);
+        if (!isNaN(endTime.getTime()) && now.getTime() > endTime.getTime()) {
+          return res.status(403).json({
+            success: false,
+            error: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+            message: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+            waktu_selesai: activeExam.waktu_selesai,
+          });
+        }
+      }
+
       const rawQuestions = await getQuestionsByExamId(activeExam.id);
       // Sanitasi: Siswa saat ujian tidak boleh melihat kunci jawaban
       const studentQuestions = rawQuestions.map((item: any) => {
@@ -3616,12 +3641,12 @@ const handleLogin = async (req: Request, res: Response) => {
 
   // 5. CBT Sesi & Student Answer Operations (CBT Core REST APIs)
 
-  // POST /start-exam: Cek apakah Token valid dan status exam 'Aktif'. Jika ya, buat baris baru di tabel Exam_Sessions.
+  // POST /start-exam & POST /verify-token: Verifikasi Token & Inisialisasi Sesi Ujian
   const handleStartExam = async (req: Request, res: Response) => {
     try {
       const { exam_id, user_id, token, username, kode_paket } = req.body;
 
-      // 1. Resolve User
+      // Resolve User
       let targetUserId = user_id ? parseInt(user_id, 10) : null;
       if (!targetUserId && username) {
         const u = await findUserByUsername(username);
@@ -3629,76 +3654,150 @@ const handleLogin = async (req: Request, res: Response) => {
       }
 
       if (!targetUserId) {
-        return res.status(400).json({ error: 'user_id atau username siswa wajib diisi' });
+        return res.status(400).json({
+          success: false,
+          message: 'user_id atau username siswa wajib diisi',
+          error: 'user_id atau username siswa wajib diisi',
+        });
       }
 
       const user = await findUserById(targetUserId);
       if (!user) {
-        return res.status(404).json({ error: 'User / Siswa tidak ditemukan di database' });
+        return res.status(404).json({
+          success: false,
+          message: 'User / Siswa tidak ditemukan di database',
+          error: 'User / Siswa tidak ditemukan di database',
+        });
       }
 
       if (user.status !== 'aktif') {
         return res.status(403).json({
+          success: false,
+          message: 'Akun siswa berstatus tidak aktif. Tidak dapat mengikuti ujian.',
           error: 'Akun siswa berstatus tidak aktif. Tidak dapat mengikuti ujian.',
         });
       }
 
-      // 2. Resolve Exam
-      let targetExamId = exam_id ? parseInt(exam_id, 10) : null;
-      let exam = null;
-      if (targetExamId) {
-        exam = await getExamById(targetExamId);
-      } else if (kode_paket) {
-        const allExams = await getAllExams();
-        exam = allExams.find((e) => e.kode_paket.trim().toUpperCase() === kode_paket.trim().toUpperCase()) || null;
-        if (exam) targetExamId = exam.id;
-      } else if (token) {
-        // Otomatis cari paket ujian yang memiliki token sesuai
-        const allExams = await getAllExams();
-        exam = allExams.find((e) => e.token.trim().toUpperCase() === token.trim().toUpperCase()) || null;
-        if (exam) targetExamId = exam.id;
-      }
-
-      if (!exam || !targetExamId) {
-        return res.status(404).json({
+      // LANGKAH 1: Cari Ujian - Query ke tabel exams berdasarkan token
+      const cleanToken = token ? token.toString().trim() : '';
+      if (!cleanToken && !exam_id && !kode_paket) {
+        return res.status(400).json({
           success: false,
-          error: 'Token ujian tidak ditemukan atau tidak valid. Silakan cek kembali token dari pengawas.',
-          message: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+          message: 'Token ujian wajib dimasukkan',
+          error: 'Token ujian wajib dimasukkan',
         });
       }
 
-      // Cek apakah status exam 'Aktif'
-      if (exam.status !== 'Aktif') {
+      let exam: any = null;
+      const pool = getPool();
+
+      // Query langsung ke Cloud SQL PostgreSQL berdasarkan token
+      if (cleanToken) {
+        try {
+          const sqlRes = await pool.query(
+            `SELECT id, kode_paket, mapel, kelas, waktu_mulai, waktu_selesai, durasi, token, status, tipe_penilaian FROM exams WHERE UPPER(TRIM(token)) = UPPER(TRIM($1)) LIMIT 1`,
+            [cleanToken]
+          );
+          if (sqlRes.rows && sqlRes.rows.length > 0) {
+            exam = sqlRes.rows[0];
+          }
+        } catch (dbErr) {
+          console.warn('DB query by token error:', dbErr);
+        }
+      }
+
+      // Fallback query by id jika belum ditemukan
+      if (!exam && exam_id) {
+        try {
+          const sqlRes = await pool.query(
+            `SELECT id, kode_paket, mapel, kelas, waktu_mulai, waktu_selesai, durasi, token, status, tipe_penilaian FROM exams WHERE id = $1 LIMIT 1`,
+            [parseInt(exam_id, 10)]
+          );
+          if (sqlRes.rows && sqlRes.rows.length > 0) {
+            exam = sqlRes.rows[0];
+          }
+        } catch (dbErr) {
+          console.warn('DB query by id error:', dbErr);
+        }
+      }
+
+      // Fallback memory store jika DB offline
+      if (!exam) {
+        const allExams = await getAllExams();
+        if (cleanToken) {
+          exam = allExams.find((e) => e.token && e.token.trim().toUpperCase() === cleanToken.toUpperCase()) || null;
+        } else if (exam_id) {
+          exam = allExams.find((e) => e.id === parseInt(exam_id, 10)) || null;
+        } else if (kode_paket) {
+          exam = allExams.find((e) => e.kode_paket && e.kode_paket.trim().toUpperCase() === kode_paket.toString().trim().toUpperCase()) || null;
+        }
+      }
+
+      // 1. Jika tidak ada / token salah -> return 404 'Token tidak valid'
+      if (!exam) {
+        return res.status(404).json({
+          success: false,
+          message: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+          error: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+        });
+      }
+
+      if (cleanToken && exam.token && exam.token.trim().toUpperCase() !== cleanToken.toUpperCase()) {
+        return res.status(404).json({
+          success: false,
+          message: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+          error: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
+        });
+      }
+
+      // LANGKAH 2: Validasi Waktu Mulai (CEK INI DULU)
+      // Bandingkan waktu server saat ini dengan waktu_mulai. Jika waktu saat ini < waktu_mulai, return HTTP 403:
+      const now = new Date();
+      if (exam.waktu_mulai) {
+        const startTime = new Date(exam.waktu_mulai);
+        if (!isNaN(startTime.getTime()) && now.getTime() < startTime.getTime()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Jadwal ujian ini belum dimulai. Silakan cek kembali jadwal Anda.',
+            error: 'Jadwal ujian ini belum dimulai. Silakan cek kembali jadwal Anda.',
+            waktu_mulai: exam.waktu_mulai,
+          });
+        }
+      }
+
+      // LANGKAH 3: Validasi Waktu Selesai
+      // Jika waktu saat ini > waktu_selesai, return HTTP 403:
+      if (exam.waktu_selesai) {
+        const endTime = new Date(exam.waktu_selesai);
+        if (!isNaN(endTime.getTime()) && now.getTime() > endTime.getTime()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+            error: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+            waktu_selesai: exam.waktu_selesai,
+          });
+        }
+      }
+
+      // Validasi Status Exam
+      if (exam.status && exam.status !== 'Aktif') {
         return res.status(403).json({
           success: false,
-          error: `Paket ujian "${exam.mapel}" saat ini berstatus "${exam.status}". Ujian hanya dapat diikuti jika berstatus "Aktif".`,
           message: `Paket ujian "${exam.mapel}" saat ini berstatus "${exam.status}". Ujian hanya dapat diikuti jika berstatus "Aktif".`,
+          error: `Paket ujian "${exam.mapel}" saat ini berstatus "${exam.status}". Ujian hanya dapat diikuti jika berstatus "Aktif".`,
           exam_status: exam.status,
         });
       }
 
-      // Cek apakah Token valid
-      if (!token) {
-        return res.status(400).json({ success: false, error: 'Token ujian wajib dimasukkan', message: 'Token ujian wajib dimasukkan' });
-      }
-
-      if (exam.token.trim().toUpperCase() !== token.trim().toUpperCase()) {
-        return res.status(401).json({
-          success: false,
-          error: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
-          message: 'Token ujian tidak valid. Pastikan token yang Anda masukkan sesuai dengan token dari pengawas.',
-        });
-      }
-
-      // Cek apakah siswa sudah menyelesaikan ujian ini (1 siswa 1 kali ujian)
+      // LANGKAH 4: Cek Riwayat Sesi (CEK INI TERAKHIR)
+      // Query ke tabel exam_sessions menggunakan user_id dan exam_id. HANYA JIKA data ditemukan DAN status_pengerjaan adalah 'Selesai' atau 'Force Submit', BARU return HTTP 403:
       try {
-        const pool = getPool();
         const sessionCheckRes = await pool.query(
-          `SELECT status_pengerjaan FROM exam_sessions WHERE user_id = $1 AND exam_id = $2 ORDER BY id DESC`,
-          [targetUserId, targetExamId]
+          `SELECT id, status_pengerjaan FROM exam_sessions WHERE user_id = $1 AND exam_id = $2 ORDER BY id DESC`,
+          [targetUserId, exam.id]
         );
 
-        if (sessionCheckRes.rows.length > 0) {
+        if (sessionCheckRes.rows && sessionCheckRes.rows.length > 0) {
           const finishedSession = sessionCheckRes.rows.find(
             (row: any) => row.status_pengerjaan === 'Selesai' || row.status_pengerjaan === 'Force Submit'
           );
@@ -3706,30 +3805,17 @@ const handleLogin = async (req: Request, res: Response) => {
           if (finishedSession) {
             return res.status(403).json({
               success: false,
-              error: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
               message: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
+              error: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
             });
           }
         }
       } catch (dbCheckErr) {
-        console.warn('Fallback check for completed exam session:', dbCheckErr);
-        const memSessions = memStore.sessions.filter(
-          (s) => s.user_id === targetUserId && s.exam_id === targetExamId
-        );
-        const finishedMem = memSessions.find(
-          (s) => s.status_pengerjaan === 'Selesai' || s.status_pengerjaan === 'Force Submit'
-        );
-        if (finishedMem) {
-          return res.status(403).json({
-            success: false,
-            error: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
-            message: 'Anda sudah menyelesaikan ujian ini dan tidak dapat mengulangnya kembali.',
-          });
-        }
+        console.warn('Check exam_sessions query error:', dbCheckErr);
       }
 
-      // Jika ya, buat/dapatkan baris baru di tabel Exam_Sessions
-      const session = await startOrGetExamSession(targetExamId, targetUserId, !!req.body.force_new);
+      // Jika semua validasi lolos, buat / dapatkan sesi ujian
+      const session = await startOrGetExamSession(exam.id, targetUserId, !!req.body.force_new);
 
       res.status(200).json({
         success: true,
@@ -3740,6 +3826,8 @@ const handleLogin = async (req: Request, res: Response) => {
           kode_paket: exam.kode_paket,
           mapel: exam.mapel,
           kelas: exam.kelas,
+          waktu_mulai: exam.waktu_mulai,
+          waktu_selesai: exam.waktu_selesai,
           durasi: exam.durasi,
           status: exam.status,
         },
@@ -3751,7 +3839,11 @@ const handleLogin = async (req: Request, res: Response) => {
       });
     } catch (error: any) {
       console.error('Error start-exam:', error);
-      res.status(500).json({ success: false, error: error.message || 'Gagal memulai sesi ujian', message: error.message || 'Gagal memulai sesi ujian' });
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Gagal memulai sesi ujian',
+        message: error.message || 'Gagal memulai sesi ujian',
+      });
     }
   };
 
