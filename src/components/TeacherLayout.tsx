@@ -83,7 +83,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
   // ==========================================
   const isAdmin = currentUser?.role === 'admin';
   const [students, setStudents] = useState<CBTUser[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [loadingStudents, setLoadingStudents] = useState<boolean>(true);
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [studentStatusFilter, setStudentStatusFilter] = useState('Semua Status');
   const [studentCurrentPage, setStudentCurrentPage] = useState(1);
@@ -108,7 +108,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
   // ==========================================
   const [exams, setExams] = useState<CBTExam[]>([]);
   const [questions, setQuestions] = useState<CBTQuestion[]>([]);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [loadingQuestions, setLoadingQuestions] = useState<boolean>(true);
   const [selectedExamFilter, setSelectedExamFilter] = useState<string>('Semua Paket');
   const [questionMediaTypeFilter, setQuestionMediaTypeFilter] = useState<string>('Semua Media');
   const [questionSearchQuery, setQuestionSearchQuery] = useState('');
@@ -165,7 +165,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
   const [editScheduleStatus, setEditScheduleStatus] = useState<'Aktif' | 'Draft' | 'Selesai'>('Aktif');
   const [editScheduleClass, setEditScheduleClass] = useState('Semua Kelas');
 
-  const teacherName = currentUser?.name || 'Ahmad Fauzi, S.Pd.';
+  const teacherName = currentUser?.name || 'Guru';
 
   const showToast = (msg: string) => {
     setToastMessage(msg);

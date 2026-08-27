@@ -70,8 +70,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [realHistory, setRealHistory] = useState<ExamHistoryItem[]>([]);
   const [exams, setExams] = useState<CBTExam[]>([]);
 
-  const studentName = currentUser?.name || 'Budi Santoso';
-  const studentNis = currentUser?.username || '10001';
+  const studentName = currentUser?.name || 'Siswa';
+  const studentNis = currentUser?.username || '-';
 
   // Load daftar ujian aktif untuk Card Info Siswa
   useEffect(() => {

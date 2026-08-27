@@ -49,9 +49,9 @@ export default function App() {
   }>(fallbackSchemaData);
 
   const [stats, setStats] = useState({
-    totalUsers: 3,
-    totalExams: 1,
-    totalQuestions: 5,
+    totalUsers: 0,
+    totalExams: 0,
+    totalQuestions: 0,
     totalSessions: 0,
   });
 
@@ -119,14 +119,15 @@ export default function App() {
     Promise.all([
       apiFetch('/api/users').then((r) => parseJsonResponse(r, [])).catch(() => []),
       apiFetch('/api/exams').then((r) => parseJsonResponse(r, [])).catch(() => []),
+      apiFetch('/api/questions').then((r) => parseJsonResponse(r, [])).catch(() => []),
       apiFetch('/api/sessions').then((r) => parseJsonResponse(r, [])).catch(() => []),
     ])
-      .then(([users, exams, sessions]) => {
+      .then(([users, exams, questions, sessions]) => {
         setStats({
-          totalUsers: Array.isArray(users) && users.length > 0 ? users.length : 5,
-          totalExams: Array.isArray(exams) && exams.length > 0 ? exams.length : 1,
-          totalQuestions: 6,
-          totalSessions: Array.isArray(sessions) ? sessions.length : 4,
+          totalUsers: Array.isArray(users) ? users.length : 0,
+          totalExams: Array.isArray(exams) ? exams.length : 0,
+          totalQuestions: Array.isArray(questions) ? questions.length : 0,
+          totalSessions: Array.isArray(sessions) ? sessions.length : 0,
         });
       })
       .catch((e) => console.warn('Stats fetch notice:', e));

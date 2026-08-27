@@ -611,7 +611,7 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const studentDisplayName = currentUser?.name || 'Budi Santoso';
+  const studentDisplayName = currentUser?.name || 'Siswa';
   const answeredCount = questions.filter(
     (q) => (studentAnswers[q.id] || '').trim().length > 0
   ).length;
