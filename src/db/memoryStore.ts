@@ -126,51 +126,7 @@ export class InMemoryCbtStore {
       createdAt: new Date(),
     };
 
-    const murid1: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_ahmad',
-      name: 'Ahmad Fauzi',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    const murid2: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_siti',
-      name: 'Siti Nurhaliza',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    const murid3: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_budi',
-      name: 'Budi Pratama',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    const murid4: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_dewi',
-      name: 'Dewi Anggraini',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    this.users.push(admin, guru, murid1, murid2, murid3, murid4);
+    this.users.push(admin, guru);
 
     const exam: MemExam = {
       id: this.nextExamId++,

@@ -301,51 +301,7 @@ export class InMemoryCbtStore {
       createdAt: new Date(),
     };
 
-    const murid1: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_ahmad',
-      name: 'Ahmad Fauzi',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    const murid2: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_siti',
-      name: 'Siti Nurhaliza',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    const murid3: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_budi',
-      name: 'Budi Pratama',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    const murid4: MemUser = {
-      id: this.nextUserId++,
-      uid: null,
-      username: 'siswa_dewi',
-      name: 'Dewi Anggraini',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-      createdAt: new Date(),
-    };
-
-    this.users.push(admin, guru, murid1, murid2, murid3, murid4);
+    this.users.push(admin, guru);
 
     const exam: MemExam = {
       id: this.nextExamId++,
@@ -472,80 +428,9 @@ export class InMemoryCbtStore {
 
     this.questions.push(q1, q2, q3, q4, q5, q6);
 
-    const sess1: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid1.id,
-      waktu_mulai_siswa: new Date(Date.now() - 45 * 60 * 1000),
-      waktu_submit: new Date(),
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Selesai',
-      jml_pelanggaran: 0,
-      detail_pelanggaran: null,
-      benar_pg: 4,
-      salah_pg: 1,
-      kosong_pg: 0,
-      nilai_pg: 80,
-      total_nilai: 80,
-      createdAt: new Date(),
-    };
-
-    const sess2: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid2.id,
-      waktu_mulai_siswa: new Date(Date.now() - 20 * 60 * 1000),
-      waktu_submit: null,
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Sedang Mengerjakan',
-      jml_pelanggaran: 1,
-      detail_pelanggaran: `[${new Date().toLocaleTimeString('id-ID')}] Peringatan: Berpindah tab browser / membuka aplikasi lain`,
-      benar_pg: null,
-      salah_pg: null,
-      kosong_pg: null,
-      nilai_pg: null,
-      total_nilai: null,
-      createdAt: new Date(),
-    };
-
-    const sess3: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid3.id,
-      waktu_mulai_siswa: new Date(Date.now() - 30 * 60 * 1000),
-      waktu_submit: new Date(),
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Force Submit',
-      jml_pelanggaran: 3,
-      detail_pelanggaran: `[10:00:15] Peringatan: Mencoba klik kanan (context menu)\n[10:05:22] Peringatan: Berpindah tab browser\n[10:08:44] FORCE SUBMIT: Batas 3x pelanggaran anti-cheat tercapai`,
-      benar_pg: 1,
-      salah_pg: 4,
-      kosong_pg: 0,
-      nilai_pg: 20,
-      total_nilai: 20,
-      createdAt: new Date(),
-    };
-
-    const sess4: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid4.id,
-      waktu_mulai_siswa: new Date(Date.now() - 15 * 60 * 1000),
-      waktu_submit: null,
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Sedang Mengerjakan',
-      jml_pelanggaran: 0,
-      detail_pelanggaran: null,
-      benar_pg: null,
-      salah_pg: null,
-      kosong_pg: null,
-      nilai_pg: null,
-      total_nilai: null,
-      createdAt: new Date(),
-    };
-
-    this.sessions.push(sess1, sess2, sess3, sess4);
-    // this.answers dibiarkan kosong secara default (tanpa dummy data)
+    // Initial sessions & answers dibiarkan kosong secara default (tanpa mock data dummy)
+    this.sessions = [];
+    this.answers = [];
   }
 
   // --- Users ---
@@ -2798,47 +2683,14 @@ export async function seedDemoData() {
       return { message: 'Database sudah memiliki data' };
     }
 
-    // 1. Buat User Guru dan Murid
+    // 1. Buat User Guru
     const guruPass = await bcrypt.hash('guru123', 10);
-    const muridPass = await bcrypt.hash('siswa123', 10);
 
     const [guru] = await db.insert(users).values({
       username: 'guru_cbt',
       name: 'Budi Santoso, S.Pd',
       password: guruPass,
       role: 'guru',
-      status: 'aktif',
-    }).returning();
-
-    const [murid1] = await db.insert(users).values({
-      username: 'siswa_ahmad',
-      name: 'Ahmad Fauzi',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-    }).returning();
-
-    const [murid2] = await db.insert(users).values({
-      username: 'siswa_siti',
-      name: 'Siti Nurhaliza',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-    }).returning();
-
-    const [murid3] = await db.insert(users).values({
-      username: 'siswa_budi',
-      name: 'Budi Pratama',
-      password: muridPass,
-      role: 'murid',
-      status: 'aktif',
-    }).returning();
-
-    const [murid4] = await db.insert(users).values({
-      username: 'siswa_dewi',
-      name: 'Dewi Anggraini',
-      password: muridPass,
-      role: 'murid',
       status: 'aktif',
     }).returning();
 
@@ -2935,71 +2787,10 @@ export async function seedDemoData() {
       },
     ]).returning();
 
-    const [demoSession] = await db.insert(exam_sessions).values({
-      exam_id: ujian.id,
-      user_id: murid1.id,
-      status_pengerjaan: 'Selesai',
-      waktu_mulai_siswa: new Date(Date.now() - 45 * 60 * 1000),
-      waktu_submit: new Date(),
-      benar_pg: 4,
-      salah_pg: 1,
-      kosong_pg: 0,
-      nilai_pg: 80,
-      total_nilai: 80,
-      jml_pelanggaran: 0,
-    }).returning();
-
-    await db.insert(exam_sessions).values({
-      exam_id: ujian.id,
-      user_id: murid2.id,
-      status_pengerjaan: 'Sedang Mengerjakan',
-      waktu_mulai_siswa: new Date(Date.now() - 20 * 60 * 1000),
-      terakhir_aktif: new Date(),
-      jml_pelanggaran: 1,
-      detail_pelanggaran: `[${new Date().toLocaleTimeString('id-ID')}] Peringatan: Berpindah tab browser / membuka aplikasi lain`,
-    });
-
-    await db.insert(exam_sessions).values({
-      exam_id: ujian.id,
-      user_id: murid3.id,
-      status_pengerjaan: 'Force Submit',
-      waktu_mulai_siswa: new Date(Date.now() - 30 * 60 * 1000),
-      waktu_submit: new Date(),
-      terakhir_aktif: new Date(),
-      jml_pelanggaran: 3,
-      detail_pelanggaran: `[10:00:15] Peringatan: Mencoba klik kanan (context menu)\n[10:05:22] Peringatan: Berpindah tab browser\n[10:08:44] FORCE SUBMIT: Batas 3x pelanggaran anti-cheat tercapai`,
-      benar_pg: 1,
-      salah_pg: 4,
-      kosong_pg: 0,
-      nilai_pg: 20,
-      total_nilai: 20,
-    });
-
-    await db.insert(exam_sessions).values({
-      exam_id: ujian.id,
-      user_id: murid4.id,
-      status_pengerjaan: 'Sedang Mengerjakan',
-      waktu_mulai_siswa: new Date(Date.now() - 15 * 60 * 1000),
-      terakhir_aktif: new Date(),
-      jml_pelanggaran: 0,
-      detail_pelanggaran: null,
-    });
-
-    const essayQ = createdQuestions.find(q => q.kunci === 'ESSAY');
-    if (essayQ) {
-      await db.insert(student_answers).values({
-        session_id: demoSession.id,
-        question_id: essayQ.id,
-        jawaban_siswa: 'Database relasional SQL menggunakan skema kaku terstruktur (schema-first) dan menjamin konsistensi data tinggi dengan transaksi ACID penuh. Sebaliknya, database NoSQL menggunakan skema dinamis (schema-less) yang memprioritaskan ketersediaan dan fleksibilitas scaling horizontal.',
-        skor_guru: null,
-      });
-    }
-
     return {
       message: 'Demo seed data created successfully',
       credentials: {
         guru: { username: 'guru_cbt', password: 'guru123' },
-        murid: { username: 'siswa_ahmad', password: 'murid123' },
         examToken: 'CBT26',
       },
     };
@@ -3010,7 +2801,6 @@ export async function seedDemoData() {
       message: 'In-memory demo data initialized successfully',
       credentials: {
         guru: { username: 'guru_cbt', password: 'guru123' },
-        murid: { username: 'siswa_ahmad', password: 'murid123' },
         examToken: 'CBT26',
       },
     };

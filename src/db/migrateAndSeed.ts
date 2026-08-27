@@ -141,9 +141,8 @@ async function run() {
 
     if (count === 0) {
       const guruPass = await bcrypt.hash('guru123', 10);
-      const muridPass = await bcrypt.hash('murid123', 10);
 
-      // 1. Insert Users
+      // 1. Insert Guru
       const guruRes = await client.query(`
         INSERT INTO users (username, name, password, role, status)
         VALUES ('guru_cbt', 'Drs. H. Mulyadi, M.Pd.', $1, 'guru', 'aktif')
@@ -151,35 +150,7 @@ async function run() {
       `, [guruPass]);
       const guruId = guruRes.rows[0].id;
 
-      const murid1Res = await client.query(`
-        INSERT INTO users (username, name, password, role, status)
-        VALUES ('siswa_ahmad', 'Ahmad Fauzi', $1, 'murid', 'aktif')
-        RETURNING id;
-      `, [muridPass]);
-      const murid1Id = murid1Res.rows[0].id;
-
-      const murid2Res = await client.query(`
-        INSERT INTO users (username, name, password, role, status)
-        VALUES ('siswa_siti', 'Siti Nurhaliza', $1, 'murid', 'aktif')
-        RETURNING id;
-      `, [muridPass]);
-      const murid2Id = murid2Res.rows[0].id;
-
-      const murid3Res = await client.query(`
-        INSERT INTO users (username, name, password, role, status)
-        VALUES ('siswa_budi', 'Budi Pratama', $1, 'murid', 'aktif')
-        RETURNING id;
-      `, [muridPass]);
-      const murid3Id = murid3Res.rows[0].id;
-
-      const murid4Res = await client.query(`
-        INSERT INTO users (username, name, password, role, status)
-        VALUES ('siswa_dewi', 'Dewi Anggraini', $1, 'murid', 'aktif')
-        RETURNING id;
-      `, [muridPass]);
-      const murid4Id = murid4Res.rows[0].id;
-
-      console.log('✔ Seeded 5 Users (1 Guru, 4 Murid).');
+      console.log('✔ Seeded initial Guru user.');
 
       // 2. Insert Exam Package
       const examRes = await client.query(`
@@ -203,42 +174,6 @@ async function run() {
         RETURNING id, kunci;
       `, [examId, guruId]);
       console.log(`✔ Seeded ${qRes.rows.length} Questions (5 Pilihan Ganda + 1 Essay).`);
-
-      const essayQuestionId = qRes.rows.find(r => r.kunci === 'ESSAY')?.id;
-
-      // 4. Insert Sessions (1 Selesai, 1 Live with 1 violation, 1 Force Submit 3 violations, 1 Live clean)
-      const sess1Res = await client.query(`
-        INSERT INTO exam_sessions (exam_id, user_id, status_pengerjaan, waktu_mulai_siswa, waktu_submit, benar_pg, salah_pg, kosong_pg, nilai_pg, total_nilai, jml_pelanggaran)
-        VALUES ($1, $2, 'Selesai', NOW() - INTERVAL '45 minutes', NOW(), 4, 1, 0, 80, 80, 0)
-        RETURNING id;
-      `, [examId, murid1Id]);
-      const sess1Id = sess1Res.rows[0].id;
-
-      await client.query(`
-        INSERT INTO exam_sessions (exam_id, user_id, status_pengerjaan, waktu_mulai_siswa, terakhir_aktif, jml_pelanggaran, detail_pelanggaran)
-        VALUES ($1, $2, 'Sedang Mengerjakan', NOW() - INTERVAL '20 minutes', NOW(), 1, 'Peringatan: Berpindah tab browser / membuka aplikasi lain');
-      `, [examId, murid2Id]);
-
-      await client.query(`
-        INSERT INTO exam_sessions (exam_id, user_id, status_pengerjaan, waktu_mulai_siswa, waktu_submit, terakhir_aktif, jml_pelanggaran, detail_pelanggaran, benar_pg, salah_pg, kosong_pg, nilai_pg, total_nilai)
-        VALUES ($1, $2, 'Force Submit', NOW() - INTERVAL '30 minutes', NOW(), NOW(), 3, '[10:00:15] Peringatan: Mencoba klik kanan (context menu)\n[10:05:22] Peringatan: Berpindah tab browser\n[10:08:44] FORCE SUBMIT: Batas 3x pelanggaran anti-cheat tercapai', 1, 4, 0, 20, 20);
-      `, [examId, murid3Id]);
-
-      await client.query(`
-        INSERT INTO exam_sessions (exam_id, user_id, status_pengerjaan, waktu_mulai_siswa, terakhir_aktif, jml_pelanggaran)
-        VALUES ($1, $2, 'Sedang Mengerjakan', NOW() - INTERVAL '15 minutes', NOW(), 0);
-      `, [examId, murid4Id]);
-
-      console.log('✔ Seeded 4 Exam Sessions for Live Monitor.');
-
-      // 5. Insert Student Answer (Essay for Ahmad)
-      if (essayQuestionId) {
-        await client.query(`
-          INSERT INTO student_answers (session_id, question_id, jawaban_siswa, skor_guru)
-          VALUES ($1, $2, 'Database relasional SQL menggunakan skema kaku terstruktur (schema-first) dan menjamin konsistensi data tinggi dengan transaksi ACID penuh. Sebaliknya, database NoSQL menggunakan skema dinamis (schema-less) yang memprioritaskan ketersediaan dan fleksibilitas scaling horizontal.', NULL);
-        `, [sess1Id, essayQuestionId]);
-        console.log('✔ Seeded Student Essay Answer ready for teacher grading.');
-      }
     } else {
       console.log('ℹ Users table already has data. Skipping re-seed to preserve existing state.');
     }
