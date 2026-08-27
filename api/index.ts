@@ -3319,16 +3319,26 @@ const handleLogin = async (req: Request, res: Response) => {
         }
       }
 
+      let activeExamEndTime: Date | null = null;
       if (activeExam.waktu_selesai) {
-        const endTime = new Date(activeExam.waktu_selesai);
-        if (!isNaN(endTime.getTime()) && now.getTime() > endTime.getTime()) {
-          return res.status(403).json({
-            success: false,
-            error: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
-            message: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
-            waktu_selesai: activeExam.waktu_selesai,
-          });
+        const parsedEnd = new Date(activeExam.waktu_selesai);
+        if (!isNaN(parsedEnd.getTime())) {
+          activeExamEndTime = parsedEnd;
         }
+      } else if (activeExam.waktu_mulai && activeExam.durasi) {
+        const startTime = new Date(activeExam.waktu_mulai);
+        if (!isNaN(startTime.getTime())) {
+          activeExamEndTime = new Date(startTime.getTime() + Number(activeExam.durasi) * 60000);
+        }
+      }
+
+      if (activeExamEndTime && now.getTime() > activeExamEndTime.getTime()) {
+        return res.status(403).json({
+          success: false,
+          error: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+          message: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+          waktu_selesai: activeExam.waktu_selesai || activeExamEndTime.toISOString(),
+        });
       }
 
       let studentQuestions: any[] = [];
@@ -3791,9 +3801,10 @@ const handleLogin = async (req: Request, res: Response) => {
         });
       }
 
-      // LANGKAH 2: Validasi Waktu Mulai (CEK INI DULU)
-      // Bandingkan waktu server saat ini dengan waktu_mulai. Jika waktu saat ini < waktu_mulai, return HTTP 403:
+      // LANGKAH 2: Validasi Waktu Mulai & Waktu Selesai (Kedaluwarsa)
       const now = new Date();
+
+      // 2a. Validasi Waktu Mulai (Cek jika waktu saat ini < waktu_mulai)
       if (exam.waktu_mulai) {
         const startTime = new Date(exam.waktu_mulai);
         if (!isNaN(startTime.getTime()) && now.getTime() < startTime.getTime()) {
@@ -3806,18 +3817,27 @@ const handleLogin = async (req: Request, res: Response) => {
         }
       }
 
-      // LANGKAH 3: Validasi Waktu Selesai
-      // Jika waktu saat ini > waktu_selesai, return HTTP 403:
+      // 2b. Kalkulasi Waktu Berakhir (End Time) & Blokir Akses Kedaluwarsa (Expired)
+      let examEndTime: Date | null = null;
       if (exam.waktu_selesai) {
-        const endTime = new Date(exam.waktu_selesai);
-        if (!isNaN(endTime.getTime()) && now.getTime() > endTime.getTime()) {
-          return res.status(403).json({
-            success: false,
-            message: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
-            error: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
-            waktu_selesai: exam.waktu_selesai,
-          });
+        const parsedEndTime = new Date(exam.waktu_selesai);
+        if (!isNaN(parsedEndTime.getTime())) {
+          examEndTime = parsedEndTime;
         }
+      } else if (exam.waktu_mulai && exam.durasi) {
+        const startTime = new Date(exam.waktu_mulai);
+        if (!isNaN(startTime.getTime())) {
+          examEndTime = new Date(startTime.getTime() + Number(exam.durasi) * 60000);
+        }
+      }
+
+      if (examEndTime && now.getTime() > examEndTime.getTime()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+          error: 'Jadwal ujian ini sudah berakhir dan tidak dapat diakses lagi.',
+          waktu_selesai: exam.waktu_selesai || examEndTime.toISOString(),
+        });
       }
 
       // Validasi Status Exam
