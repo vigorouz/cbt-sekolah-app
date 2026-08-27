@@ -763,6 +763,66 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
     return filteredQuestions.slice(start, start + questionsPerPage);
   }, [filteredQuestions, questionCurrentPage, questionsPerPage]);
 
+  // Helper: Status Dinamis Real-Time Jadwal Ujian
+  const getDynamicStatus = (exam: CBTExam) => {
+    if (exam.status === 'Draft') {
+      return {
+        text: 'Draft',
+        color: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
+        dotColor: 'bg-amber-500',
+      };
+    }
+
+    const now = new Date();
+
+    // Cek apakah ujian memiliki waktu_mulai dan waktu_selesai (atau hitung waktu selesai dari waktu_mulai + durasi jika waktu_selesai tidak ada di DB)
+    if (exam.waktu_mulai) {
+      const startTime = new Date(exam.waktu_mulai);
+      let endTime: Date;
+
+      if (exam.waktu_selesai) {
+        endTime = new Date(exam.waktu_selesai);
+      } else {
+        const durasiMinutes = exam.durasi || 60;
+        endTime = new Date(startTime.getTime() + durasiMinutes * 60 * 1000);
+      }
+
+      if (now > endTime) {
+        return {
+          text: 'Selesai',
+          color: 'bg-gray-100 text-gray-600 border-gray-300',
+          dotColor: 'bg-slate-400',
+        };
+      }
+
+      if (now < startTime) {
+        return {
+          text: 'Terjadwal',
+          color: 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100',
+          dotColor: 'bg-blue-500',
+        };
+      }
+
+      if (now >= startTime && now <= endTime) {
+        return {
+          text: 'Aktif',
+          color: 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100',
+          dotColor: 'bg-green-500 animate-pulse',
+        };
+      }
+    }
+
+    // JIKA ujian bebas (tidak ada waktu mulai/durasi): return status bawaan dari DB dengan warna hijau/aktif
+    const isSelesai = exam.status === 'Selesai';
+    return {
+      text: exam.status || 'Aktif',
+      color: isSelesai
+        ? 'bg-gray-100 text-gray-600 border-gray-300'
+        : 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100',
+      dotColor: isSelesai ? 'bg-slate-400' : 'bg-green-500 animate-pulse',
+    };
+  };
+
   // Filter Jadwal Ujian
   const filteredSchedules = useMemo(() => {
     return exams.filter((ex) => {
@@ -771,8 +831,11 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
         ex.kode_paket.toLowerCase().includes(scheduleSearchQuery.toLowerCase()) ||
         ex.token.toLowerCase().includes(scheduleSearchQuery.toLowerCase()) ||
         ex.kelas.toLowerCase().includes(scheduleSearchQuery.toLowerCase());
+      const dynStatus = getDynamicStatus(ex);
       const matchStatus =
-        scheduleStatusFilter === 'Semua Status' || ex.status === scheduleStatusFilter;
+        scheduleStatusFilter === 'Semua Status' ||
+        dynStatus.text === scheduleStatusFilter ||
+        ex.status === scheduleStatusFilter;
       return matchSearch && matchStatus;
     });
   }, [exams, scheduleSearchQuery, scheduleStatusFilter]);
@@ -1863,28 +1926,21 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
 
                               {/* Status */}
                               <td className="py-4 px-5">
-                                <button
-                                  onClick={() => handleToggleScheduleStatus(ex)}
-                                  title="Klik untuk mengubah status"
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
-                                    ex.status === 'Aktif'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                      : ex.status === 'Selesai'
-                                      ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                  }`}
-                                >
-                                  <span
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      ex.status === 'Aktif'
-                                        ? 'bg-emerald-500 animate-pulse'
-                                        : ex.status === 'Selesai'
-                                        ? 'bg-slate-400'
-                                        : 'bg-amber-500'
-                                    }`}
-                                  />
-                                  <span>{ex.status}</span>
-                                </button>
+                                {(() => {
+                                  const dynStatus = getDynamicStatus(ex);
+                                  return (
+                                    <button
+                                      onClick={() => handleToggleScheduleStatus(ex)}
+                                      title="Klik untuk mengubah status"
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${dynStatus.color}`}
+                                    >
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full ${dynStatus.dotColor}`}
+                                      />
+                                      <span>{dynStatus.text}</span>
+                                    </button>
+                                  );
+                                })()}
                               </td>
 
                               {/* Aksi */}

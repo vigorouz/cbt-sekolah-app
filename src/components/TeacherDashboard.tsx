@@ -58,7 +58,6 @@ export const TeacherDashboard: React.FC = () => {
   const [selectedSessionLog, setSelectedSessionLog] = useState<LiveSessionItem | null>(null);
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState<number | null>(null);
-  const [isSimulating, setIsSimulating] = useState<number | null>(null);
 
   // Function to fetch live monitor data from Cloud SQL
   const fetchLiveMonitorData = useCallback(async (isManualTrigger = false) => {
@@ -203,33 +202,6 @@ export const TeacherDashboard: React.FC = () => {
       showToast(err.message || 'Gagal memproses reset pelanggaran.');
     } finally {
       setIsResetting(null);
-    }
-  };
-
-  // Handler: Simulasi Tambah Pelanggaran via POST /api/violation
-  const handleAddViolation = async (sessionId: number, studentName: string) => {
-    setIsSimulating(sessionId);
-    try {
-      const res = await apiFetch('/api/violation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          reason: 'Deteksi berpindah tab / Window Blur (Anti-Cheat)',
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Gagal menambah pelanggaran');
-      }
-
-      showToast(`Pelanggaran berhasil dicatat untuk ${studentName} (Total: ${data.jml_pelanggaran || 1}x).`);
-      fetchLiveMonitorData();
-    } catch (err: any) {
-      showToast(err.message || 'Gagal memproses pelanggaran.');
-    } finally {
-      setIsSimulating(null);
     }
   };
 
@@ -394,188 +366,194 @@ export const TeacherDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Student Grid: Kotak-kotak siswa dengan respon warna real-time */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {filteredSessions.map((student) => {
-            // Aturan Warna Indikator Kotak Siswa:
-            // 1. Hijau/Aman: violationsCount === 0 && status !== 'Force Submit' && status !== 'Selesai'
-            // 2. Kuning/Melanggar (Warning): violationsCount >= 1 && violationsCount < 3 && status !== 'Force Submit'
-            // 3. Merah/Force Submit: violationsCount >= 3 || status === 'Force Submit'
-            // 4. Biru/Selesai Normal: status === 'Selesai' && violationsCount === 0
-            const isSafe = student.violationsCount === 0 && student.status === 'Aktif';
-            const isWarning = student.violationsCount >= 1 && student.violationsCount < 3 && student.status !== 'Force Submit' && student.status !== 'Selesai';
-            const isRedForce = student.violationsCount >= 3 || student.status === 'Force Submit';
-            const isCompletedClean = student.status === 'Selesai' && student.violationsCount === 0;
-
-            let cardBg = 'bg-white';
-            let cardBorder = 'border-emerald-300 hover:border-emerald-400 ring-1 ring-emerald-500/20';
-            let statusDot = 'bg-emerald-500';
-            let statusTextColor = 'text-emerald-700';
-            let statusBadge = (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                Aman (0 Pelanggaran)
-              </span>
-            );
-            let iconComponent = <Laptop className="w-7 h-7 text-emerald-600 mb-1" />;
-
-            if (isWarning) {
-              cardBg = 'bg-amber-50/70';
-              cardBorder = 'border-amber-400 ring-2 ring-amber-400/50';
-              statusDot = 'bg-amber-500 animate-ping';
-              statusTextColor = 'text-amber-800';
-              statusBadge = (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
-                  Melanggar ({student.violationsCount}x)
-                </span>
-              );
-              iconComponent = <AlertTriangle className="w-7 h-7 text-amber-600 mb-1" />;
-            } else if (isRedForce) {
-              cardBg = 'bg-rose-50/70';
-              cardBorder = 'border-rose-400 ring-2 ring-rose-500/50';
-              statusDot = 'bg-rose-600';
-              statusTextColor = 'text-rose-800';
-              statusBadge = (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
-                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                  Force Submit (3x)
-                </span>
-              );
-              iconComponent = <XCircle className="w-7 h-7 text-rose-600 mb-1" />;
-            } else if (isCompletedClean) {
-              cardBg = 'bg-slate-50';
-              cardBorder = 'border-slate-200';
-              statusDot = 'bg-blue-600';
-              statusTextColor = 'text-blue-800';
-              statusBadge = (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-700" />
-                  Selesai Dikerjakan
-                </span>
-              );
-              iconComponent = <CheckCircle2 className="w-7 h-7 text-blue-600 mb-1" />;
-            }
-
-            return (
-              <div
-                key={student.id}
-                className={`${cardBg} ${cardBorder} border rounded-2xl p-4 sm:p-5 flex flex-col justify-between relative shadow-[0px_10px_25px_-5px_rgba(30,58,138,0.05)] transition-all hover:-translate-y-0.5 duration-150`}
-              >
-                {/* Top Header Badge & Pulse Dot */}
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[11px] font-mono font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-2xs">
-                    NIS: {student.nis}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`w-2.5 h-2.5 rounded-full ${statusDot}`} />
-                    <span className="text-[10px] font-mono text-slate-400">Sesi #{student.id}</span>
-                  </div>
-                </div>
-
-                {/* Center Content: Avatar Icon & Student Name */}
-                <div className="flex flex-col items-center text-center my-2">
-                  <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-center mb-2">
-                    {iconComponent}
-                  </div>
-
-                  <h3 className="font-bold text-sm sm:text-base text-slate-900 truncate max-w-full">
-                    {student.name}
-                  </h3>
-
-                  <div className="text-[11px] text-slate-500 truncate max-w-full font-medium">
-                    {student.examTitle}
-                  </div>
-
-                  <div className="mt-2">{statusBadge}</div>
-
-                  {student.lastViolationReason && (
-                    <div
-                      onClick={() => setSelectedSessionLog(student)}
-                      className="text-[10px] text-rose-700 bg-rose-100/90 border border-rose-200 px-2.5 py-1 rounded-lg mt-2 font-medium max-w-full truncate cursor-pointer hover:bg-rose-200/80 transition-colors"
-                      title="Klik untuk melihat detail log pelanggaran lengkap"
-                    >
-                      ⚠️ {student.lastViolationReason}
-                    </div>
-                  )}
-                </div>
-
-                {/* Progress & Exam Info */}
-                <div className="space-y-1.5 my-2 pt-2 border-t border-slate-100 text-xs">
-                  <div className="flex justify-between text-[11px] text-slate-500 font-medium">
-                    <span>Nilai / Skor Akhir:</span>
-                    <span className="font-bold font-mono text-slate-800">
-                      {student.score !== undefined ? `${student.score} Poin` : 'Sedang Berlangsung'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1 font-mono">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      Mulai: {student.waktuMulai || '-'}
-                    </span>
-                    <span>
-                      Pelanggaran: <strong>{student.violationsCount}/3</strong>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Bottom Action Controls */}
-                <div className="pt-3 border-t border-slate-100/80 flex flex-col gap-1.5">
-                  {/* Reset Pelanggaran Button */}
-                  <button
-                    onClick={() => handleResetViolation(student.id, student.name)}
-                    disabled={isResetting === student.id}
-                    className={`w-full py-1.5 px-2 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer ${
-                      student.violationsCount > 0 || student.status === 'Force Submit'
-                        ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
-                        : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-300'
-                    }`}
-                  >
-                    <RotateCcw className={`w-3.5 h-3.5 ${isResetting === student.id ? 'animate-spin' : ''}`} />
-                    <span>
-                      {isResetting === student.id ? 'Mereset...' : 'Reset Pelanggaran (0)'}
-                    </span>
-                  </button>
-
-                  {/* Simulasi Tambah Pelanggaran (+1) untuk pengujian langsung */}
-                  {student.status !== 'Selesai' && (
-                    <button
-                      onClick={() => handleAddViolation(student.id, student.name)}
-                      disabled={isSimulating === student.id}
-                      className="w-full py-1 px-2 text-[11px] font-medium text-rose-700 hover:bg-rose-50 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <AlertTriangle className="w-3 h-3 text-rose-500" />
-                      <span>
-                        {isSimulating === student.id ? 'Mencatat...' : 'Simulasi Pelanggaran (+1)'}
-                      </span>
-                    </button>
-                  )}
-
-                  {/* Tombol Lihat Log Lengkap */}
-                  {student.detailPelanggaran && (
-                    <button
-                      onClick={() => setSelectedSessionLog(student)}
-                      className="w-full py-1 px-2 text-[10px] font-medium text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <FileText className="w-3 h-3" />
-                      <span>Buka Log Pelanggaran</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Empty State */}
-        {filteredSessions.length === 0 && !loading && (
+        {/* Student Grid / Loading / Empty State */}
+        {loading && sessions.length === 0 ? (
+          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-xs space-y-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#00236f] flex items-center justify-center mx-auto animate-spin">
+              <RefreshCw className="w-5 h-5 text-[#00236f]" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-800 text-base">Memuat data live...</p>
+              <p className="text-xs text-slate-500 mt-1">Mengambil data sesi ujian siswa secara real-time dari database</p>
+            </div>
+          </div>
+        ) : filteredSessions.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 text-slate-400 text-xs sm:text-sm space-y-2">
             <Users className="w-10 h-10 text-slate-300 mx-auto" />
             <p className="font-semibold text-slate-700 text-base">Belum Ada Sesi Ujian Aktif</p>
             <p className="max-w-md mx-auto">
               Saat siswa login dan memasukkan token ujian di Portal Siswa, sesi pengerjaan akan langsung muncul di kotak monitor ini secara otomatis.
             </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredSessions.map((student) => {
+              // Aturan Warna Indikator Kotak Siswa (Urutan Prioritas):
+              // a. Jika status_pengerjaan === 'Force Submit' / violationsCount >= 3 -> Merah: Force Submit (${student.violationsCount}x)
+              // b. Jika violationsCount > 0 (terlepas dari 'Selesai' atau 'Sedang Mengerjakan') -> Kuning/Orange: Melanggar (${student.violationsCount}x)
+              // c. Jika violationsCount === 0 -> jika 'Selesai' (Biru), jika aktif -> Hijau: Aman (0 Pelanggaran)
+
+              let cardBg = 'bg-white';
+              let cardBorder = 'border-emerald-300 hover:border-emerald-400 ring-1 ring-emerald-500/20';
+              let statusDot = 'bg-emerald-500';
+              let statusTextColor = 'text-emerald-700';
+              let statusBadge = (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                  Aman (0 Pelanggaran)
+                </span>
+              );
+              let iconComponent = <Laptop className="w-7 h-7 text-emerald-600 mb-1" />;
+
+              if (student.rawStatus === 'Force Submit' || student.status === 'Force Submit' || student.violationsCount >= 3) {
+                // a. Force Submit (Merah)
+                cardBg = 'bg-rose-50/70';
+                cardBorder = 'border-rose-400 ring-2 ring-rose-500/50';
+                statusDot = 'bg-rose-600';
+                statusTextColor = 'text-rose-800';
+                statusBadge = (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
+                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                    Force Submit ({student.violationsCount}x)
+                  </span>
+                );
+                iconComponent = <XCircle className="w-7 h-7 text-rose-600 mb-1" />;
+              } else if (student.violationsCount > 0) {
+                // b. Pelanggaran > 0 (Kuning/Orange) - Terlepas dari status 'Selesai' atau 'Sedang Mengerjakan'
+                cardBg = 'bg-amber-50/70';
+                cardBorder = 'border-amber-400 ring-2 ring-amber-400/50';
+                statusDot = 'bg-amber-500 animate-ping';
+                statusTextColor = 'text-amber-800';
+                statusBadge = (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                    Melanggar ({student.violationsCount}x)
+                  </span>
+                );
+                iconComponent = <AlertTriangle className="w-7 h-7 text-amber-600 mb-1" />;
+              } else if (student.rawStatus === 'Selesai' || student.status === 'Selesai') {
+                // c. Selesai Bersih (0 Pelanggaran)
+                cardBg = 'bg-slate-50';
+                cardBorder = 'border-slate-200';
+                statusDot = 'bg-blue-600';
+                statusTextColor = 'text-blue-800';
+                statusBadge = (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-700" />
+                    Selesai Dikerjakan
+                  </span>
+                );
+                iconComponent = <CheckCircle2 className="w-7 h-7 text-blue-600 mb-1" />;
+              } else {
+                // c. Aman (0 Pelanggaran)
+                cardBg = 'bg-white';
+                cardBorder = 'border-emerald-300 hover:border-emerald-400 ring-1 ring-emerald-500/20';
+                statusDot = 'bg-emerald-500';
+                statusTextColor = 'text-emerald-700';
+                statusBadge = (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                    Aman (0 Pelanggaran)
+                  </span>
+                );
+                iconComponent = <Laptop className="w-7 h-7 text-emerald-600 mb-1" />;
+              }
+
+              return (
+                <div
+                  key={student.id}
+                  className={`${cardBg} ${cardBorder} border rounded-2xl p-4 sm:p-5 flex flex-col justify-between relative shadow-[0px_10px_25px_-5px_rgba(30,58,138,0.05)] transition-all hover:-translate-y-0.5 duration-150`}
+                >
+                  {/* Top Header Badge & Pulse Dot */}
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-[11px] font-mono font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-2xs">
+                      NIS: {student.nis}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2.5 h-2.5 rounded-full ${statusDot}`} />
+                      <span className="text-[10px] font-mono text-slate-400">Sesi #{student.id}</span>
+                    </div>
+                  </div>
+
+                  {/* Center Content: Avatar Icon & Student Name */}
+                  <div className="flex flex-col items-center text-center my-2">
+                    <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-center mb-2">
+                      {iconComponent}
+                    </div>
+
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 truncate max-w-full">
+                      {student.name}
+                    </h3>
+
+                    <div className="text-[11px] text-slate-500 truncate max-w-full font-medium">
+                      {student.examTitle}
+                    </div>
+
+                    <div className="mt-2">{statusBadge}</div>
+
+                    {student.lastViolationReason && (
+                      <div
+                        onClick={() => setSelectedSessionLog(student)}
+                        className="text-[10px] text-rose-700 bg-rose-100/90 border border-rose-200 px-2.5 py-1 rounded-lg mt-2 font-medium max-w-full truncate cursor-pointer hover:bg-rose-200/80 transition-colors"
+                        title="Klik untuk melihat detail log pelanggaran lengkap"
+                      >
+                        ⚠️ {student.lastViolationReason}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Progress & Exam Info */}
+                  <div className="space-y-1.5 my-2 pt-2 border-t border-slate-100 text-xs">
+                    <div className="flex justify-between text-[11px] text-slate-500 font-medium">
+                      <span>Nilai / Skor Akhir:</span>
+                      <span className="font-bold font-mono text-slate-800">
+                        {student.score !== undefined ? `${student.score} Poin` : 'Sedang Berlangsung'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1 font-mono">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        Mulai: {student.waktuMulai || '-'}
+                      </span>
+                      <span>
+                        Pelanggaran: <strong>{student.violationsCount}/3</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Bottom Action Controls */}
+                  <div className="pt-3 border-t border-slate-100/80 flex flex-col gap-1.5">
+                    {/* Reset Pelanggaran Button */}
+                    <button
+                      onClick={() => handleResetViolation(student.id, student.name)}
+                      disabled={isResetting === student.id}
+                      className={`w-full py-1.5 px-2 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                        student.violationsCount > 0 || student.status === 'Force Submit'
+                          ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
+                          : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-300'
+                      }`}
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${isResetting === student.id ? 'animate-spin' : ''}`} />
+                      <span>
+                        {isResetting === student.id ? 'Mereset...' : 'Reset Pelanggaran (0)'}
+                      </span>
+                    </button>
+
+                    {/* Tombol Lihat Log Lengkap */}
+                    {student.detailPelanggaran && (
+                      <button
+                        onClick={() => setSelectedSessionLog(student)}
+                        className="w-full py-1 px-2 text-[10px] font-medium text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <FileText className="w-3 h-3" />
+                        <span>Buka Log Pelanggaran</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </main>

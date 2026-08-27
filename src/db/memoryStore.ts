@@ -297,80 +297,9 @@ export class InMemoryCbtStore {
 
     this.questions.push(q1, q2, q3, q4, q5, q6);
 
-    const sess1: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid1.id,
-      waktu_mulai_siswa: new Date(Date.now() - 45 * 60 * 1000),
-      waktu_submit: new Date(),
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Selesai',
-      jml_pelanggaran: 0,
-      detail_pelanggaran: null,
-      benar_pg: 4,
-      salah_pg: 1,
-      kosong_pg: 0,
-      nilai_pg: 80,
-      total_nilai: 80,
-      createdAt: new Date(),
-    };
-
-    const sess2: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid2.id,
-      waktu_mulai_siswa: new Date(Date.now() - 20 * 60 * 1000),
-      waktu_submit: null,
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Sedang Mengerjakan',
-      jml_pelanggaran: 1,
-      detail_pelanggaran: `[${new Date().toLocaleTimeString('id-ID')}] Peringatan: Berpindah tab browser / membuka aplikasi lain`,
-      benar_pg: null,
-      salah_pg: null,
-      kosong_pg: null,
-      nilai_pg: null,
-      total_nilai: null,
-      createdAt: new Date(),
-    };
-
-    const sess3: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid3.id,
-      waktu_mulai_siswa: new Date(Date.now() - 30 * 60 * 1000),
-      waktu_submit: new Date(),
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Force Submit',
-      jml_pelanggaran: 3,
-      detail_pelanggaran: `[10:00:15] Peringatan: Mencoba klik kanan (context menu)\n[10:05:22] Peringatan: Berpindah tab browser\n[10:08:44] FORCE SUBMIT: Batas 3x pelanggaran anti-cheat tercapai`,
-      benar_pg: 1,
-      salah_pg: 4,
-      kosong_pg: 0,
-      nilai_pg: 20,
-      total_nilai: 20,
-      createdAt: new Date(),
-    };
-
-    const sess4: MemExamSession = {
-      id: this.nextSessionId++,
-      exam_id: exam.id,
-      user_id: murid4.id,
-      waktu_mulai_siswa: new Date(Date.now() - 15 * 60 * 1000),
-      waktu_submit: null,
-      terakhir_aktif: new Date(),
-      status_pengerjaan: 'Sedang Mengerjakan',
-      jml_pelanggaran: 0,
-      detail_pelanggaran: null,
-      benar_pg: null,
-      salah_pg: null,
-      kosong_pg: null,
-      nilai_pg: null,
-      total_nilai: null,
-      createdAt: new Date(),
-    };
-
-    this.sessions.push(sess1, sess2, sess3, sess4);
-    // this.answers dibiarkan kosong secara default (tanpa dummy data)
+    // Initial sessions & answers dibiarkan kosong secara default (tanpa mock data dummy)
+    this.sessions = [];
+    this.answers = [];
   }
 
   // --- Users ---
@@ -764,8 +693,8 @@ export class InMemoryCbtStore {
     const currentCount = session.jml_pelanggaran || 0;
     const newCount = currentCount + 1;
     const currentDetail = session.detail_pelanggaran ? `${session.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    const newDetail = `${currentDetail}[${timestampStr}] Pelanggaran #${newCount}: ${reason}`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    const newDetail = `${currentDetail}[${currentTime}] Pelanggaran #${newCount}: ${reason}`;
 
     if (newCount >= 3) {
       session.jml_pelanggaran = newCount;
@@ -811,8 +740,8 @@ export class InMemoryCbtStore {
     }
 
     const currentDetail = session.detail_pelanggaran ? `${session.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    session.detail_pelanggaran = `${currentDetail}[${timestampStr}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    session.detail_pelanggaran = `${currentDetail}[${currentTime}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
     session.jml_pelanggaran = 0;
     if (session.status_pengerjaan === 'Force Submit') {
       session.status_pengerjaan = 'Sedang Mengerjakan';
@@ -892,15 +821,23 @@ export class InMemoryCbtStore {
     }
 
     if (fallbackData?.answers && typeof fallbackData.answers === 'object') {
-      Object.entries(fallbackData.answers).forEach(([qIdStr, ansVal]) => {
-        const qId = Number(qIdStr);
-        if (!isNaN(qId) && ansVal !== undefined) {
-          const existing = this.answers.find((a) => a.session_id === session!.id && a.question_id === qId);
-          if (!existing) {
+      const rawAns = fallbackData.answers;
+      if (Array.isArray(rawAns)) {
+        rawAns.forEach((item: any) => {
+          const qId = Number(item.question_id ?? item.questionId);
+          const val = item.jawaban_siswa !== undefined ? item.jawaban_siswa : (item.answer !== undefined ? item.answer : '');
+          if (!isNaN(qId)) {
+            this.saveStudentAnswer(session!.id, qId, String(val));
+          }
+        });
+      } else {
+        Object.entries(rawAns).forEach(([qIdStr, ansVal]) => {
+          const qId = Number(qIdStr);
+          if (!isNaN(qId) && ansVal !== undefined) {
             this.saveStudentAnswer(session!.id, qId, String(ansVal));
           }
-        }
-      });
+        });
+      }
     }
 
     const allQuestions = this.questions.filter((q) => q.exam_id === session.exam_id);

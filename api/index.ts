@@ -936,8 +936,8 @@ export class InMemoryCbtStore {
     const currentCount = session.jml_pelanggaran || 0;
     const newCount = currentCount + 1;
     const currentDetail = session.detail_pelanggaran ? `${session.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    const newDetail = `${currentDetail}[${timestampStr}] Pelanggaran #${newCount}: ${reason}`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    const newDetail = `${currentDetail}[${currentTime}] Pelanggaran #${newCount}: ${reason}`;
 
     if (newCount >= 3) {
       session.jml_pelanggaran = newCount;
@@ -998,8 +998,8 @@ export class InMemoryCbtStore {
     }
 
     const currentDetail = session.detail_pelanggaran ? `${session.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    session.detail_pelanggaran = `${currentDetail}[${timestampStr}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    session.detail_pelanggaran = `${currentDetail}[${currentTime}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
     session.jml_pelanggaran = 0;
     if (session.status_pengerjaan === 'Force Submit') {
       session.status_pengerjaan = 'Sedang Mengerjakan';
@@ -2119,8 +2119,8 @@ export async function recordViolation(
     const currentCount = currentSession.jml_pelanggaran || 0;
     const newCount = currentCount + 1;
     const currentDetail = currentSession.detail_pelanggaran ? `${currentSession.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    const newDetail = `${currentDetail}[${timestampStr}] Pelanggaran #${newCount}: ${reason}`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    const newDetail = `${currentDetail}[${currentTime}] Pelanggaran #${newCount}: ${reason}`;
 
     if (newCount >= 3) {
       const answers = await db.select().from(student_answers).where(eq(student_answers.session_id, actualSessionId));
@@ -2207,8 +2207,8 @@ export async function resetViolation(
     const currentSession = session[0];
     const actualSessionId = currentSession.id;
     const currentDetail = currentSession.detail_pelanggaran ? `${currentSession.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    const newDetail = `${currentDetail}[${timestampStr}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    const newDetail = `${currentDetail}[${currentTime}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
 
     const nextStatus =
       currentSession.status_pengerjaan === 'Force Submit' ? 'Sedang Mengerjakan' : currentSession.status_pengerjaan;

@@ -647,8 +647,8 @@ export async function recordViolation(
     const currentCount = currentSession.jml_pelanggaran || 0;
     const newCount = currentCount + 1;
     const currentDetail = currentSession.detail_pelanggaran ? `${currentSession.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    const newDetail = `${currentDetail}[${timestampStr}] Pelanggaran #${newCount}: ${reason}`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    const newDetail = `${currentDetail}[${currentTime}] Pelanggaran #${newCount}: ${reason}`;
 
     if (newCount >= 3) {
       const answers = await db.select().from(student_answers).where(eq(student_answers.session_id, actualSessionId));
@@ -735,8 +735,8 @@ export async function resetViolation(
     const currentSession = session[0];
     const actualSessionId = currentSession.id;
     const currentDetail = currentSession.detail_pelanggaran ? `${currentSession.detail_pelanggaran}\n` : '';
-    const timestampStr = new Date().toLocaleTimeString('id-ID');
-    const newDetail = `${currentDetail}[${timestampStr}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
+    const currentTime = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\./g, ':');
+    const newDetail = `${currentDetail}[${currentTime}] [GURU / PENGAWAS] Pelanggaran di-reset kembali menjadi 0.`;
 
     const nextStatus =
       currentSession.status_pengerjaan === 'Force Submit' ? 'Sedang Mengerjakan' : currentSession.status_pengerjaan;
@@ -928,101 +928,114 @@ export async function submitExam(
       }
     }
 
-    for (const item of normalizedEntries) {
-      const qId = item.question_id;
-      const jawabanText = item.jawaban_siswa;
-
-      // Cek apakah data jawaban untuk butir soal ini sudah pernah tersimpan di sesi ini
-      const existingAns = await pool.query(
-        `SELECT id FROM student_answers WHERE session_id = $1 AND question_id = $2 LIMIT 1`,
-        [actualSessionId, qId]
-      );
-
-      if (existingAns.rows.length > 0) {
-        await pool.query(
-          `UPDATE student_answers SET jawaban_siswa = $1 WHERE id = $2`,
-          [jawabanText, existingAns.rows[0].id]
-        );
-      } else {
-        await pool.query(
-          `INSERT INTO student_answers (session_id, question_id, jawaban_siswa) VALUES ($1, $2, $3)`,
-          [actualSessionId, qId, jawabanText]
-        );
-      }
-    }
-
-    // 4. Hitung skor otomatis untuk butir PG dan kumpulkan skor essay
-    const savedAnswersRes = await pool.query(
-      `SELECT id, session_id, question_id, jawaban_siswa, is_correct, skor_guru 
-       FROM student_answers 
-       WHERE session_id = $1`,
-      [actualSessionId]
-    );
-    const savedAnswersMap = new Map<number, any>();
-    savedAnswersRes.rows.forEach((ans) => savedAnswersMap.set(ans.question_id, ans));
-
+    // 3. Batch UPSERT data jawaban & update sesi ujian di dalam Database Transaction
+    const client = await pool.connect();
+    let updatedSession: any = null;
     let benar_pg = 0;
     let salah_pg = 0;
     let kosong_pg = 0;
     let totalPointsEarned = 0;
     let totalEssayPoints = 0;
     let hasEssay = false;
-
-    for (const q of allQuestions) {
-      const qWeight = Number(q.bobot_poin) || 0;
-      const isEssay =
-        q.question_type === 'essay' ||
-        q.kunci?.toUpperCase() === 'ESSAY' ||
-        q.tipe_media === 'Essay' ||
-        !q.opsi_a ||
-        q.opsi_a.trim() === '' ||
-        q.opsi_a.trim() === '-' ||
-        (q.kunci && q.kunci.length > 1);
-
-      const ansRecord = savedAnswersMap.get(q.id);
-
-      if (isEssay) {
-        hasEssay = true;
-        if (ansRecord && ansRecord.skor_guru !== null && ansRecord.skor_guru !== undefined) {
-          totalEssayPoints += Number(ansRecord.skor_guru) || 0;
-        }
-        continue;
-      }
-
-      const studentAnsText = ansRecord?.jawaban_siswa?.trim().toUpperCase() || '';
-      const kunciText = (q.kunci || '').trim().toUpperCase();
-
-      if (!ansRecord || !studentAnsText) {
-        kosong_pg++;
-      } else if (studentAnsText === kunciText) {
-        benar_pg++;
-        totalPointsEarned += qWeight;
-      } else {
-        salah_pg++;
-      }
-    }
-
-    const nilai_pg = Math.round(totalPointsEarned);
-    const total_nilai = Math.round(nilai_pg + totalEssayPoints);
+    let nilai_pg = 0;
+    let total_nilai = 0;
     const finalStatus = status || 'Selesai';
 
-    // 5. Jalankan UPDATE exam_sessions SET status_pengerjaan = 'Selesai' WHERE id = ...
-    const updateRes = await pool.query(
-      `UPDATE exam_sessions
-       SET status_pengerjaan = $1,
-           waktu_submit = NOW(),
-           terakhir_aktif = NOW(),
-           benar_pg = $2,
-           salah_pg = $3,
-           kosong_pg = $4,
-           nilai_pg = $5,
-           total_nilai = $6
-       WHERE id = $7
-       RETURNING *`,
-      [finalStatus, benar_pg, salah_pg, kosong_pg, nilai_pg, total_nilai, actualSessionId]
-    );
+    try {
+      await client.query('BEGIN');
 
-    const updatedSession = updateRes.rows[0] || currentSession;
+      // Pastikan unique index untuk (session_id, question_id) tersedia agar ON CONFLICT berjalan aman
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS student_answers_session_question_idx 
+        ON student_answers (session_id, question_id);
+      `);
+
+      // BATCH UPSERT: Simpan seluruh jawaban siswa secara batch
+      for (const item of normalizedEntries) {
+        const qId = item.question_id;
+        const jawabanText = item.jawaban_siswa;
+
+        await client.query(
+          `INSERT INTO student_answers (session_id, question_id, jawaban_siswa, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (session_id, question_id)
+           DO UPDATE SET jawaban_siswa = EXCLUDED.jawaban_siswa, waktu_jawab = NOW()`,
+          [actualSessionId, qId, jawabanText]
+        );
+      }
+
+      // 4. Ambil seluruh jawaban tersimpan untuk sesi ini di dalam transaksi
+      const savedAnswersRes = await client.query(
+        `SELECT id, session_id, question_id, jawaban_siswa, is_correct, skor_guru 
+         FROM student_answers 
+         WHERE session_id = $1`,
+        [actualSessionId]
+      );
+      const savedAnswersMap = new Map<number, any>();
+      savedAnswersRes.rows.forEach((ans) => savedAnswersMap.set(ans.question_id, ans));
+
+      // Hitung skor otomatis untuk butir PG dan kumpulkan skor essay
+      for (const q of allQuestions) {
+        const qWeight = Number(q.bobot_poin) || 0;
+        const isEssay =
+          q.question_type === 'essay' ||
+          q.kunci?.toUpperCase() === 'ESSAY' ||
+          q.tipe_media === 'Essay' ||
+          !q.opsi_a ||
+          q.opsi_a.trim() === '' ||
+          q.opsi_a.trim() === '-' ||
+          (q.kunci && q.kunci.length > 1);
+
+        const ansRecord = savedAnswersMap.get(q.id);
+
+        if (isEssay) {
+          hasEssay = true;
+          if (ansRecord && ansRecord.skor_guru !== null && ansRecord.skor_guru !== undefined) {
+            totalEssayPoints += Number(ansRecord.skor_guru) || 0;
+          }
+          continue;
+        }
+
+        const studentAnsText = ansRecord?.jawaban_siswa?.trim().toUpperCase() || '';
+        const kunciText = (q.kunci || '').trim().toUpperCase();
+
+        if (!ansRecord || !studentAnsText) {
+          kosong_pg++;
+        } else if (studentAnsText === kunciText) {
+          benar_pg++;
+          totalPointsEarned += qWeight;
+        } else {
+          salah_pg++;
+        }
+      }
+
+      nilai_pg = Math.round(totalPointsEarned);
+      total_nilai = Math.round(nilai_pg + totalEssayPoints);
+
+      // 5. Update exam_sessions status_pengerjaan menjadi 'Selesai' HANYA SETELAH batch answers sukses disimpan
+      const updateRes = await client.query(
+        `UPDATE exam_sessions
+         SET status_pengerjaan = $1,
+             waktu_submit = NOW(),
+             terakhir_aktif = NOW(),
+             benar_pg = $2,
+             salah_pg = $3,
+             kosong_pg = $4,
+             nilai_pg = $5,
+             total_nilai = $6
+         WHERE id = $7
+         RETURNING *`,
+        [finalStatus, benar_pg, salah_pg, kosong_pg, nilai_pg, total_nilai, actualSessionId]
+      );
+
+      await client.query('COMMIT');
+      updatedSession = updateRes.rows[0] || currentSession;
+    } catch (txError) {
+      await client.query('ROLLBACK');
+      throw txError;
+    } finally {
+      client.release();
+    }
 
     // Sinkronkan ke in-memory store jika ada
     try {

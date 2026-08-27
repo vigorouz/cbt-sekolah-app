@@ -84,8 +84,8 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
       : null
   );
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string>('Tersimpan di Cloud SQL');
 
   // UI State: Submit Modal, Anti-Cheat Warning Modal & Mobile Drawer
   const [showSubmitModal, setShowSubmitModal] = useState<boolean>(false);
@@ -289,34 +289,48 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
 
   // Reference to latest submit function to avoid stale closures in listeners
   const confirmSubmitExamRef = useRef<(statusOverride?: 'Selesai' | 'Force Submit' | any) => Promise<void>>(async () => {});
+  // Ref cooldown untuk mencegah double-trigger saat event blur dan visibilitychange terpanggil bersamaan
+  const lastViolationTime = useRef<number>(0);
 
   // 2. Anti-Cheat: Record violation to backend (POST /api/exams/violation) & show warning modal
   const handleRecordViolation = useCallback(
     async (reason: string) => {
       if (isSubmitted) return;
 
+      // Pengecekan Cooldown / Debounce: Abaikan jika pelanggaran terjadi dalam jarak kurang dari 2 detik (2000 ms)
+      const now = Date.now();
+      if (now - lastViolationTime.current < 2000) {
+        return;
+      }
+      lastViolationTime.current = now;
+
       const targetSessionId = Number(session?.id || initialSession?.id || 1);
       const targetUserId = Number(currentUser?.id || session?.user_id || initialSession?.user_id || 1);
       const targetExamId = Number(activeExam?.id || session?.exam_id || initialSession?.exam_id || 1);
 
+      let nextViolations = 1;
+
       // Functional state update untuk mengatasi stale state / closure dengan penguncian mutlak
       setViolationsCount((prev) => {
-        if (prev >= 3) return prev; // Kunci jika sudah 3
+        if (prev >= 3) {
+          nextViolations = 3;
+          return prev;
+        }
         const newCount = prev + 1;
+        nextViolations = newCount;
         if (newCount >= 3) {
           setWarningMessage(
             'FORCE SUBMIT: Batas toleransi 3x pelanggaran tercapai! Sesi ujian Anda otomatis dihentikan dan diserahkan ke database.'
           );
-          setShowWarningModal(true);
-          confirmSubmitExamRef.current('Force Submit');
         } else {
           setWarningMessage(`Peringatan Keamanan (${newCount}/3): ${reason}`);
-          setShowWarningModal(true);
         }
+        setShowWarningModal(true);
         return newCount;
       });
 
       try {
+        // MUTLAK: Melakukan await pada fungsi update pelanggaran (menyimpan log ke-3 dan count 3 ke database) TERLEBIH DAHULU
         const res = await apiFetch('/api/exams/violation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -329,11 +343,22 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
         });
 
         const data = await res.json().catch(() => ({}));
-        if (data.forceSubmitted || data.status_pengerjaan === 'Force Submit' || (data.jml_pelanggaran && data.jml_pelanggaran >= 3)) {
-          confirmSubmitExamRef.current('Force Submit');
+        
+        // Setelah (atau di dalam .then) fungsi update pelanggaran tersebut sukses, BARU panggil fungsi forceSubmitExam
+        if (
+          nextViolations >= 3 ||
+          data.forceSubmitted ||
+          data.status_pengerjaan === 'Force Submit' ||
+          (data.jml_pelanggaran && data.jml_pelanggaran >= 3)
+        ) {
+          await confirmSubmitExamRef.current('Force Submit');
         }
       } catch (err) {
         console.error('Error reporting anti-cheat violation:', err);
+        // Fallback jika network error namun batas 3x sudah tercapai di client
+        if (nextViolations >= 3) {
+          await confirmSubmitExamRef.current('Force Submit');
+        }
       }
     },
     [session, initialSession, currentUser, activeExam, isSubmitted]
@@ -421,9 +446,9 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
     return () => clearInterval(timer);
   }, [session, isSubmitted, timeLeftSeconds]);
 
-  // Handler: Select Answer Option (Auto-Save ke POST /api/answers/auto-save)
-  const handleSelectAnswer = async (questionId: number, rawValue: any) => {
-    if (isSubmitted) return;
+  // Handler: Select Answer Option (HANYA simpan ke React local useState)
+  const handleSelectAnswer = (questionId: number, rawValue: any) => {
+    if (isSubmitted || isSubmitting) return;
 
     // Pastikan yang disimpan ke state adalah string murni, bukan SyntheticEvent atau elemen DOM
     let optionLetter = '';
@@ -441,36 +466,8 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
       optionLetter = String(rawValue);
     }
 
-    const targetSessionId = Number(session?.id || initialSession?.id || 1);
-    const targetUserId = Number(currentUser?.id || session?.user_id || initialSession?.user_id || 1);
-    const targetExamId = Number(activeExam?.id || session?.exam_id || initialSession?.exam_id || 1);
-
-    // Update state secara optimis dengan nilai string murni
+    // Update state HANYA ke lokal useState React untuk mencegah race condition & overload server
     setStudentAnswers((prev) => ({ ...prev, [questionId]: optionLetter }));
-    setSaveStatus('Menyimpan...');
-
-    try {
-      const res = await apiFetch('/api/answers/auto-save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: targetSessionId,
-          user_id: targetUserId,
-          exam_id: targetExamId,
-          question_id: questionId,
-          jawaban_siswa: optionLetter,
-        }),
-      });
-
-      if (res.ok) {
-        setSaveStatus('Tersimpan di Cloud SQL');
-      } else {
-        setSaveStatus('Gagal sinkron');
-      }
-    } catch (err) {
-      console.error('Error auto-saving answer:', err);
-      setSaveStatus('Offline');
-    }
   };
 
   // Handler: Toggle Flag for Review (Ragu-ragu)
@@ -492,6 +489,7 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
 
   // Handler: Open Submit Confirmation Modal (Membuka Dialog Modal UI React)
   const handleSubmitExam = (e?: React.MouseEvent | React.FormEvent | string | any) => {
+    if (isSubmitting) return;
     try {
       if (e && typeof e === 'object') {
         if (typeof e.preventDefault === 'function') e.preventDefault();
@@ -513,8 +511,10 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
     }
   };
 
-  // Handler: Confirm & Submit Exam via POST /api/submit-exam
+  // Handler: Confirm & Submit Exam via POST /api/submit-exam (Batch Request)
   const confirmSubmitExam = async (statusOverride?: 'Selesai' | 'Force Submit' | any) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       setShowSubmitModal(false);
       const currentStatus: 'Selesai' | 'Force Submit' =
@@ -523,8 +523,6 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
       const targetSessionId = Number(session?.id || initialSession?.id || 1);
       const targetUserId = Number(currentUser?.id || session?.user_id || initialSession?.user_id || 1);
       const targetExamId = Number(activeExam?.id || session?.exam_id || initialSession?.exam_id || 1);
-
-      setLoading(true);
 
       // Filter dan map state answers menjadi array murni dan object murni tanpa referensi circular atau DOM
       const sanitizedAnswersArray: { question_id: number; jawaban_siswa: string }[] = [];
@@ -556,7 +554,7 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
         student_answers: sanitizedAnswersArray,
       };
 
-      console.log('MENGIRIM DATA:', payloadData);
+      console.log('BATCH MENGIRIM DATA JAWABAN:', payloadData);
 
       const res = await apiFetch('/api/submit-exam', {
         method: 'POST',
@@ -601,7 +599,7 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
       setIsSubmitted(false);
       alert('Gagal Submit: ' + (err?.message || 'Terjadi kesalahan saat menghubungi server.'));
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -779,10 +777,10 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
           <span className="hidden md:inline text-xs text-slate-500 border-l border-slate-300 pl-3">
             {activeExam?.kelas || 'Kelas XII'}
           </span>
-          {/* Live Auto-Save Indicator */}
-          <div className="hidden lg:flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-            <Check className="w-3 h-3 text-emerald-600" />
-            <span>Auto-Save: {saveStatus}</span>
+          {/* Local Device Save Indicator */}
+          <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Jawaban tersimpan sementara di perangkat.</span>
           </div>
         </div>
 
@@ -810,9 +808,10 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
             type="button"
             id="btn-header-submit-exam"
             onClick={handleSubmitExam}
-            className="hidden md:flex items-center gap-1.5 bg-[#00236f] hover:bg-[#1e3a8a] text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
+            disabled={isSubmitting}
+            className="hidden md:flex items-center gap-1.5 bg-[#00236f] hover:bg-[#1e3a8a] text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
           >
-            <Send className="w-3.5 h-3.5" />
+            {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
             <span>Kumpulkan Ujian</span>
           </button>
         </div>
@@ -920,10 +919,10 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
                   />
 
                   <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                    <span>Jawaban essay Anda otomatis tersimpan ke server secara real-time.</span>
+                    <span>Jawaban tersimpan sementara di perangkat.</span>
                     <span className="text-emerald-600 font-semibold flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Auto-Save Aktif</span>
+                      <span>Tersimpan di Perangkat</span>
                     </span>
                   </div>
                 </div>
@@ -1047,10 +1046,11 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
               type="button"
               id="btn-palette-submit-exam"
               onClick={handleSubmitExam}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              disabled={isSubmitting}
+              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>Selesai & Kumpulkan</span>
+              {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span>{isSubmitting ? 'Mengirim...' : 'Selesai & Kumpulkan'}</span>
             </button>
           </div>
         </aside>
@@ -1059,7 +1059,7 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
       {/* Floating Bottom Navigation Bar */}
       <div className="fixed bottom-0 left-0 right-0 md:right-[320px] bg-white border-t border-slate-200 px-4 sm:px-6 py-3 flex justify-between items-center z-30 shadow-[0_-4px_10px_-2px_rgba(0,0,0,0.05)]">
         <button
-          disabled={currentQuestionIndex === 0}
+          disabled={currentQuestionIndex === 0 || isSubmitting}
           onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
           className="flex items-center gap-1.5 px-4 sm:px-5 py-2.5 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors cursor-pointer"
         >
@@ -1076,14 +1076,32 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
           <span>Daftar Soal</span>
         </button>
 
-        <button
-          disabled={currentQuestionIndex >= questions.length - 1}
-          onClick={() => setCurrentQuestionIndex((prev) => Math.min(questions.length - 1, prev + 1))}
-          className="flex items-center gap-1.5 px-5 sm:px-6 py-2.5 bg-[#00236f] hover:bg-[#1e3a8a] text-white rounded-xl text-xs font-semibold disabled:opacity-40 transition-colors shadow-xs cursor-pointer"
-        >
-          <span>Selanjutnya</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        {/* Jika di soal terakhir: GANTIKAN tombol Selanjutnya dengan tombol Selesai & Kumpulkan */}
+        {currentQuestionIndex === questions.length - 1 ? (
+          <button
+            type="button"
+            id="btn-bottom-submit-exam"
+            onClick={handleSubmitExam}
+            disabled={isSubmitting}
+            className="flex items-center gap-1.5 px-5 sm:px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            <span>{isSubmitting ? 'Mengirim...' : 'Selesai & Kumpulkan'}</span>
+          </button>
+        ) : (
+          <button
+            disabled={isSubmitting}
+            onClick={() => setCurrentQuestionIndex((prev) => Math.min(questions.length - 1, prev + 1))}
+            className="flex items-center gap-1.5 px-5 sm:px-6 py-2.5 bg-[#00236f] hover:bg-[#1e3a8a] text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer disabled:opacity-40"
+          >
+            <span>Selanjutnya</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Mobile Drawer for Question Palette */}
@@ -1142,14 +1160,15 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
             <button
               type="button"
               id="btn-mobile-submit-exam"
+              disabled={isSubmitting}
               onClick={() => {
                 setIsDrawerOpen(false);
                 handleSubmitExam();
               }}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>Selesai & Kumpulkan Ujian</span>
+              {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span>{isSubmitting ? 'Mengirim...' : 'Selesai & Kumpulkan Ujian'}</span>
             </button>
           </div>
         </div>
@@ -1168,7 +1187,7 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
                 Konfirmasi Kumpulkan Ujian
               </h3>
               <p className="text-xs sm:text-sm text-slate-500 mt-2 leading-relaxed">
-                Apakah Anda yakin ingin menyelesaikan ujian ini? Seluruh jawaban yang telah dipilih akan dikunci dan dikirim ke server Cloud SQL untuk dinilai.
+                Apakah Anda yakin ingin menyelesaikan ujian ini? Seluruh jawaban yang telah dipilih akan dikunci dan dikirim sekaligus ke server Cloud SQL untuk dinilai.
               </p>
             </div>
 
@@ -1187,18 +1206,24 @@ export const StudentExamSimulator: React.FC<StudentExamSimulatorProps> = ({
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setShowSubmitModal(false)}
-                className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                className="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer disabled:opacity-50"
               >
                 Batal
               </button>
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => confirmSubmitExam()}
-                className="flex-1 py-2.5 px-4 bg-[#00236f] hover:bg-[#1e3a8a] text-white font-semibold text-xs rounded-xl shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 px-4 bg-[#00236f] hover:bg-[#1e3a8a] text-white font-semibold text-xs rounded-xl shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
-                <Check className="w-3.5 h-3.5" />
-                <span>Ya, Kumpulkan Ujian</span>
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>{isSubmitting ? 'Mengirim...' : 'Ya, Kumpulkan Ujian'}</span>
               </button>
             </div>
           </div>
