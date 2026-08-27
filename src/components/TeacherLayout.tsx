@@ -107,6 +107,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
   // BANK SOAL & PAKET SOAL STATES
   // ==========================================
   const [exams, setExams] = useState<CBTExam[]>([]);
+  const [packages, setPackages] = useState<CBTExam[]>([]);
   const [questions, setQuestions] = useState<CBTQuestion[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState<boolean>(true);
   const [selectedExamFilter, setSelectedExamFilter] = useState<string>('Semua Paket');
@@ -206,6 +207,7 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
 
       if (Array.isArray(examsData)) {
         setExams(examsData);
+        setPackages(examsData);
         if (examsData.length > 0 && questionExamId === '') {
           setQuestionExamId(examsData[0].id);
         }
@@ -1391,8 +1393,8 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                     }}
                     className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:border-[#00236f] focus:outline-none h-10"
                   >
-                    <option>Semua Paket</option>
-                    {exams.map((ex) => (
+                    <option value="Semua Paket">Semua Paket</option>
+                    {packages.map((ex) => (
                       <option key={ex.id} value={ex.id}>
                         [{ex.kode_paket}] {ex.mapel}
                       </option>
@@ -1643,7 +1645,11 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                     Total Siswa Terdaftar
                   </div>
                   <div className="text-3xl font-extrabold text-[#00236f] font-mono">
-                    {students.length}
+                    {loadingStudents ? (
+                      <span className="text-slate-400 text-xl animate-pulse">...</span>
+                    ) : (
+                      students.length
+                    )}
                   </div>
                   <p className="text-[11px] text-emerald-600 mt-1 font-medium">
                     ● Terhubung ke Cloud SQL
@@ -1655,7 +1661,11 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                     Paket Ujian
                   </div>
                   <div className="text-3xl font-extrabold text-blue-700 font-mono">
-                    {exams.length} Paket
+                    {loadingQuestions ? (
+                      <span className="text-slate-400 text-xl animate-pulse">...</span>
+                    ) : (
+                      `${packages.length} Paket`
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1 font-medium">
                     Tersedia di Bank Soal
@@ -1667,7 +1677,11 @@ export const TeacherLayout: React.FC<TeacherLayoutProps> = ({
                     Total Butir Soal
                   </div>
                   <div className="text-3xl font-extrabold text-indigo-600 font-mono">
-                    {questions.length} Soal
+                    {loadingQuestions ? (
+                      <span className="text-slate-400 text-xl animate-pulse">...</span>
+                    ) : (
+                      `${questions.length} Soal`
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1 font-medium">
                     Termasuk Media Gambar/Video

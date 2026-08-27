@@ -69,32 +69,32 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
   const [realHistory, setRealHistory] = useState<ExamHistoryItem[]>([]);
   const [exams, setExams] = useState<CBTExam[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const studentName = currentUser?.name || 'Siswa';
   const studentNis = currentUser?.username || '-';
 
-  // Load daftar ujian aktif untuk Card Info Siswa
+  // Load daftar ujian aktif dan riwayat ujian untuk murid ini
   useEffect(() => {
-    apiFetch('/api/exams')
-      .then((res) => parseJsonResponse(res, []))
-      .then((data) => {
-        if (Array.isArray(data)) {
-          const activeExams = data.filter(
+    setLoading(true);
+    Promise.all([
+      apiFetch('/api/exams')
+        .then((res) => parseJsonResponse(res, []))
+        .catch(() => []),
+      apiFetch('/api/live-monitor')
+        .then((res) => parseJsonResponse(res, { sessions: [] }))
+        .catch(() => ({ sessions: [] })),
+    ])
+      .then(([examsData, monitorData]) => {
+        if (Array.isArray(examsData)) {
+          const activeExams = examsData.filter(
             (e: CBTExam) => e.status === 'Aktif' || !e.status || e.status.toLowerCase() === 'aktif'
           );
-          setExams(activeExams.length > 0 ? activeExams : data);
+          setExams(activeExams.length > 0 ? activeExams : examsData);
         }
-      })
-      .catch((e) => console.warn('Could not load exams for student dashboard:', e));
-  }, []);
 
-  // Load real sessions dari server untuk murid ini
-  useEffect(() => {
-    apiFetch('/api/live-monitor')
-      .then((res) => parseJsonResponse(res, { sessions: [] }))
-      .then((data) => {
-        if (data?.sessions && Array.isArray(data.sessions)) {
-          const userSessions = data.sessions.filter(
+        if (monitorData?.sessions && Array.isArray(monitorData.sessions)) {
+          const userSessions = monitorData.sessions.filter(
             (s: any) =>
               (s.user_id === currentUser?.id || s.student_username === currentUser?.username) &&
               (s.status_pengerjaan === 'Selesai' || s.status_pengerjaan === 'Force Submit')
@@ -133,7 +133,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           }
         }
       })
-      .catch((e) => console.warn('Could not load live sessions:', e));
+      .catch((e) => console.warn('Could not load student dashboard data:', e))
+      .finally(() => {
+        setLoading(false);
+      });
   }, [currentUser, completedNotification]);
 
   // Efek bila ada notifikasi submit selesai

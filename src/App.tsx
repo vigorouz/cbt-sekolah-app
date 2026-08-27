@@ -54,6 +54,7 @@ export default function App() {
     totalQuestions: 0,
     totalSessions: 0,
   });
+  const [isLoadingStats, setIsLoadingStats] = useState<boolean>(true);
 
   // Handler Login: Mengarahkan secara dinamis berdasarkan peran pengguna
   const handleLoginSuccess = (user: CBTUser, role: 'guru' | 'murid' | 'admin') => {
@@ -116,6 +117,7 @@ export default function App() {
       });
 
     // Fetch live summary stats
+    setIsLoadingStats(true);
     Promise.all([
       apiFetch('/api/users').then((r) => parseJsonResponse(r, [])).catch(() => []),
       apiFetch('/api/exams').then((r) => parseJsonResponse(r, [])).catch(() => []),
@@ -130,7 +132,10 @@ export default function App() {
           totalSessions: Array.isArray(sessions) ? sessions.length : 0,
         });
       })
-      .catch((e) => console.warn('Stats fetch notice:', e));
+      .catch((e) => console.warn('Stats fetch notice:', e))
+      .finally(() => {
+        setIsLoadingStats(false);
+      });
   }, [activeTab]);
 
   // =========================================================================
@@ -389,7 +394,9 @@ export default function App() {
               <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
                 Active Users (Murid/Guru)
               </div>
-              <div className="text-2xl font-bold text-slate-900">{stats.totalUsers}</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {isLoadingStats ? <span className="text-slate-400 text-lg animate-pulse">...</span> : stats.totalUsers}
+              </div>
               <div className="text-[10px] text-green-600 mt-1 font-medium flex items-center gap-1">
                 <span>↑</span> Terdaftar di PostgreSQL Users
               </div>
@@ -399,7 +406,9 @@ export default function App() {
               <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
                 Exams Active
               </div>
-              <div className="text-2xl font-bold text-slate-900">{stats.totalExams}</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {isLoadingStats ? <span className="text-slate-400 text-lg animate-pulse">...</span> : stats.totalExams}
+              </div>
               <div
                 onClick={() => setActiveTab('teacher')}
                 className="text-[10px] text-blue-600 mt-1 font-medium underline cursor-pointer"
@@ -412,7 +421,9 @@ export default function App() {
               <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
                 Total Questions (A-E)
               </div>
-              <div className="text-2xl font-bold text-slate-900">{stats.totalQuestions}</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {isLoadingStats ? <span className="text-slate-400 text-lg animate-pulse">...</span> : stats.totalQuestions}
+              </div>
               <div className="text-[10px] text-slate-400 mt-1">Multi-media & bobot poin</div>
             </div>
 
@@ -420,7 +431,9 @@ export default function App() {
               <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
                 Sesi Ujian Selesai
               </div>
-              <div className="text-2xl font-bold text-slate-900">{stats.totalSessions}</div>
+              <div className="text-2xl font-bold text-slate-900">
+                {isLoadingStats ? <span className="text-slate-400 text-lg animate-pulse">...</span> : stats.totalSessions}
+              </div>
               <div className="w-full bg-slate-100 h-1.5 mt-2 rounded-full overflow-hidden">
                 <div className="bg-blue-600 h-full w-[40%]"></div>
               </div>
